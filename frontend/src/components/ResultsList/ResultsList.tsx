@@ -1,0 +1,165 @@
+import { useEffect, useRef } from 'react'
+import { useQuery } from '@tanstack/react-query'
+import { getSearchStatus } from '../../api/search'
+import { listJobs } from '../../api/jobs'
+import { useJobSearchStore } from '../../store/useJobSearchStore'
+import { LoadingSpinner } from '../shared/LoadingSpinner'
+import { ErrorBanner } from '../shared/ErrorBanner'
+import { EmptyState } from '../shared/EmptyState'
+import { JobCard } from './JobCard'
+
+const PAGE_SIZE = 20
+
+export function ResultsList() {
+  const activeSearchJobId = useJobSearchStore((s) => s.activeSearchJobId)
+  const criteria = useJobSearchStore((s) => s.criteria)
+  const setCriteria = useJobSearchStore((s) => s.setCriteria)
+  const page = criteria.page ?? 1
+
+  // Poll search status
+  const statusQuery = useQuery({
+    queryKey: ['searchStatus', activeSearchJobId],
+    queryFn: () => getSearchStatus(activeSearchJobId!),
+    enabled: !!activeSearchJobId,
+    refetchInterval: (query) => {
+      const status = query.state.data?.status
+      return status === 'queued' || status === 'running' ? 2000 : false
+    },
+  })
+
+  const isSearchComplete = statusQuery.data?.status === 'complete'
+  const isSearchFailed = statusQuery.data?.status === 'failed'
+
+  // Fetch jobs once complete
+  const jobsQuery = useQuery({
+    queryKey: ['jobs', activeSearchJobId, page],
+    queryFn: () =>
+      listJobs({ search_job_id: activeSearchJobId!, page, page_size: PAGE_SIZE }),
+    enabled: isSearchComplete && !!activeSearchJobId,
+  })
+
+  // Announce to screen readers when results arrive
+  const liveRef = useRef<HTMLParagraphElement>(null)
+  useEffect(() => {
+    if (jobsQuery.data && liveRef.current) {
+      liveRef.current.textContent = `${jobsQuery.data.total} results loaded.`
+    }
+  }, [jobsQuery.data])
+
+  if (!activeSearchJobId) return null
+
+  const isPolling = statusQuery.data?.status === 'queued' || statusQuery.data?.status === 'running'
+  const isLoadingJobs = isSearchComplete && jobsQuery.isLoading
+
+  if (statusQuery.isError) {
+    return (
+      <section aria-label="Search results" className="mx-auto w-full max-w-3xl">
+        <ErrorBanner message="Could not check search status. Please try again." />
+      </section>
+    )
+  }
+
+  if (isSearchFailed) {
+    return (
+      <section aria-label="Search results" className="mx-auto w-full max-w-3xl">
+        <ErrorBanner
+          message={statusQuery.data?.error ?? 'The search failed. Please try again with different criteria.'}
+        />
+      </section>
+    )
+  }
+
+  const sortedJobs = jobsQuery.data
+    ? [...jobsQuery.data.items].sort((a, b) => {
+        if (a.match_score === null && b.match_score === null) return 0
+        if (a.match_score === null) return 1
+        if (b.match_score === null) return -1
+        return b.match_score - a.match_score
+      })
+    : []
+
+  const totalPages = jobsQuery.data
+    ? Math.ceil(jobsQuery.data.total / PAGE_SIZE)
+    : 0
+
+  return (
+    <section aria-label="Search results" className="mx-auto w-full max-w-3xl">
+      {/* Live region for screen readers */}
+      <p aria-live="polite" aria-atomic="true" className="sr-only" ref={liveRef} />
+
+      {(isPolling || isLoadingJobs) && (
+        <LoadingSpinner
+          label={isPolling ? 'Searching job boards...' : 'Loading results...'}
+          size="lg"
+        />
+      )}
+
+      {jobsQuery.isError && (
+        <ErrorBanner
+          message="Failed to load job listings. Please try again."
+          onRetry={() => jobsQuery.refetch()}
+        />
+      )}
+
+      {isSearchComplete && !isLoadingJobs && !jobsQuery.isError && sortedJobs.length === 0 && (
+        <EmptyState
+          title="No jobs found"
+          description="No results matched your search. Try different keywords, remove filters, or expand your location."
+        />
+      )}
+
+      {sortedJobs.length > 0 && (
+        <>
+          <div className="mb-3 flex items-center justify-between">
+            <p className="text-sm text-gray-600">
+              <span className="font-medium">{jobsQuery.data?.total}</span> jobs found
+              {statusQuery.data?.total_results !== null &&
+                statusQuery.data?.total_results !== undefined && (
+                  <span className="text-gray-400"> (from {statusQuery.data.total_results} scraped)</span>
+                )}
+            </p>
+            <p className="text-sm text-gray-500">
+              Page {page} of {totalPages}
+            </p>
+          </div>
+
+          <ul className="flex flex-col gap-3" role="list" aria-label="Job listings">
+            {sortedJobs.map((job) => (
+              <li key={job.id}>
+                <JobCard job={job} />
+              </li>
+            ))}
+          </ul>
+
+          {/* Pagination */}
+          {totalPages > 1 && (
+            <nav
+              aria-label="Results pagination"
+              className="mt-6 flex items-center justify-center gap-2"
+            >
+              <button
+                onClick={() => setCriteria({ page: page - 1 })}
+                disabled={page <= 1}
+                aria-label="Previous page"
+                className="rounded-md border border-gray-300 px-3 py-1.5 text-sm font-medium text-gray-700 hover:bg-gray-50 focus:outline-none focus:ring-2 focus:ring-blue-500 disabled:cursor-not-allowed disabled:opacity-40"
+              >
+                &larr; Prev
+              </button>
+              <span className="text-sm text-gray-600">
+                {page} / {totalPages}
+              </span>
+              <button
+                onClick={() => setCriteria({ page: page + 1 })}
+                disabled={page >= totalPages}
+                aria-label="Next page"
+                className="rounded-md border border-gray-300 px-3 py-1.5 text-sm font-medium text-gray-700 hover:bg-gray-50 focus:outline-none focus:ring-2 focus:ring-blue-500 disabled:cursor-not-allowed disabled:opacity-40"
+              >
+                Next &rarr;
+              </button>
+            </nav>
+          )}
+        </>
+      )}
+    </section>
+  )
+}

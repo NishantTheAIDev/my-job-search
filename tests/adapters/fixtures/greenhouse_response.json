@@ -1,0 +1,28 @@
+{
+  "jobs": [
+    {
+      "id": 4001,
+      "title": "Senior Software Engineer",
+      "location": {"name": "Remote"},
+      "content": "<p>We are looking for a <strong>Senior Software Engineer</strong> with Python and FastAPI experience.</p>",
+      "absolute_url": "https://boards.greenhouse.io/acme/jobs/4001",
+      "updated_at": "2024-05-01T12:00:00.000Z"
+    },
+    {
+      "id": 4002,
+      "title": "Product Manager",
+      "location": {"name": "New York, NY"},
+      "content": "<p>Product manager for our growth team.</p>",
+      "absolute_url": "https://boards.greenhouse.io/acme/jobs/4002",
+      "updated_at": "2024-05-02T09:00:00.000Z"
+    },
+    {
+      "id": 4003,
+      "title": "Backend Engineer",
+      "location": {"name": "Remote - US"},
+      "content": "<p>Backend engineer with Go or Python skills needed.</p>",
+      "absolute_url": "https://boards.greenhouse.io/acme/jobs/4003",
+      "updated_at": "2024-05-03T15:00:00.000Z"
+    }
+  ]
+}

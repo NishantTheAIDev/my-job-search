@@ -1,0 +1,29 @@
+[
+  {
+    "id": "abc-111",
+    "text": "Senior Software Engineer",
+    "categories": {"location": "Remote", "team": "Engineering", "commitment": "Full-time"},
+    "descriptionPlain": "We are looking for a Senior Software Engineer with Python experience.",
+    "hostedUrl": "https://jobs.lever.co/acme/abc-111",
+    "createdAt": 1714521600000,
+    "workplaceType": "remote"
+  },
+  {
+    "id": "abc-222",
+    "text": "Data Scientist",
+    "categories": {"location": "San Francisco, CA", "team": "Data", "commitment": "Full-time"},
+    "descriptionPlain": "Data scientist role with ML experience required.",
+    "hostedUrl": "https://jobs.lever.co/acme/abc-222",
+    "createdAt": 1714435200000,
+    "workplaceType": "onsite"
+  },
+  {
+    "id": "abc-333",
+    "text": "DevOps Engineer",
+    "categories": {"location": "Hybrid - NYC"},
+    "description": "<p>DevOps engineer with Kubernetes experience.</p>",
+    "hostedUrl": "https://jobs.lever.co/acme/abc-333",
+    "createdAt": 1714608000000,
+    "workplaceType": "hybrid"
+  }
+]

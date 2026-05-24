@@ -1,0 +1,36 @@
+{
+  "results": [
+    {
+      "id": "1001",
+      "title": "Senior Software Engineer",
+      "company": {"display_name": "Acme Corp"},
+      "location": {"display_name": "Remote"},
+      "description": "We are looking for a senior software engineer with Python experience.",
+      "redirect_url": "https://www.adzuna.com/jobs/1001",
+      "created": "2024-05-01T12:00:00Z",
+      "salary_min": 130000,
+      "salary_max": 170000
+    },
+    {
+      "id": "1002",
+      "title": "Backend Engineer",
+      "company": {"display_name": "TechStartup"},
+      "location": {"display_name": "San Francisco, CA"},
+      "description": "Backend engineer role with FastAPI and PostgreSQL.",
+      "redirect_url": "https://www.adzuna.com/jobs/1002",
+      "created": "2024-05-02T09:00:00Z",
+      "salary_min": 120000,
+      "salary_max": 160000
+    },
+    {
+      "id": "1003",
+      "title": "Python Developer",
+      "company": {"display_name": "Dev House"},
+      "location": {"display_name": "New York, NY"},
+      "description": "Python developer needed for fintech project.",
+      "redirect_url": "https://www.adzuna.com/jobs/1003",
+      "created": "2024-05-03T15:00:00Z"
+    }
+  ],
+  "count": 3
+}
