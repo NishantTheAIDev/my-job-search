@@ -1,0 +1,59 @@
+{
+  "results": [
+    {
+      "id": 5001,
+      "name": "Senior AI Engineer",
+      "contents": "<p>Build <strong>AI</strong> systems with <em>Python</em> and PyTorch at scale.</p>",
+      "refs": {
+        "landing_page": "https://www.themuse.com/jobs/techcorp/senior-ai-engineer"
+      },
+      "company": { "id": 1, "name": "TechCorp", "short_name": "techcorp" },
+      "locations": [{ "name": "Remote" }],
+      "levels": [{ "name": "Senior Level", "short_name": "senior" }],
+      "categories": [{ "name": "Software Engineer" }],
+      "publication_date": "2024-05-01T00:00:00Z"
+    },
+    {
+      "id": 5002,
+      "name": "Marketing Manager",
+      "contents": "<p>Lead available marketing campaigns and brand training initiatives.</p>",
+      "refs": {
+        "landing_page": "https://www.themuse.com/jobs/brandco/marketing-manager"
+      },
+      "company": { "id": 2, "name": "BrandCo", "short_name": "brandco" },
+      "locations": [{ "name": "New York, NY" }],
+      "levels": [{ "name": "Mid Level", "short_name": "mid" }],
+      "categories": [{ "name": "Marketing" }],
+      "publication_date": "2024-05-02T00:00:00Z"
+    },
+    {
+      "id": 5003,
+      "name": "Backend Engineer",
+      "contents": "<p>Python backend with FastAPI. Go experience a plus.</p>",
+      "refs": {
+        "landing_page": "https://www.themuse.com/jobs/startupxyz/backend-engineer"
+      },
+      "company": { "id": 3, "name": "StartupXYZ", "short_name": "startupxyz" },
+      "locations": [{ "name": "San Francisco, CA" }],
+      "levels": [{ "name": "Mid Level", "short_name": "mid" }],
+      "categories": [{ "name": "Software Engineer" }],
+      "publication_date": "2024-05-03T00:00:00Z"
+    },
+    {
+      "id": 5004,
+      "name": "ML Engineer",
+      "contents": "<p>Train and deploy AI models at scale using modern MLOps tooling.</p>",
+      "refs": {
+        "landing_page": "https://www.themuse.com/jobs/datafirm/ml-engineer"
+      },
+      "company": { "id": 4, "name": "DataFirm", "short_name": "datafirm" },
+      "locations": [{ "name": "Flexible / Remote" }],
+      "levels": [{ "name": "Mid Level", "short_name": "mid" }],
+      "categories": [{ "name": "Data Science" }],
+      "publication_date": "2024-05-04T00:00:00Z"
+    }
+  ],
+  "page": 0,
+  "page_count": 50,
+  "total": 1000
+}

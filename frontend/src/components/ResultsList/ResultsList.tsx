@@ -125,7 +125,10 @@ export function ResultsList() {
     (filtersData.sources.length >= 2 || filtersData.companies.length > 0)
 
   return (
-    <section aria-label="Search results" className="mx-auto w-full max-w-3xl">
+    <section
+      aria-label="Search results"
+      className={`mx-auto w-full ${showFilterPanel ? 'max-w-5xl' : 'max-w-3xl'}`}
+    >
       {/* Live region for screen readers */}
       <p aria-live="polite" aria-atomic="true" className="sr-only" ref={liveRef} />
 
@@ -143,75 +146,92 @@ export function ResultsList() {
         />
       )}
 
-      {isSearchComplete && !isLoadingJobs && !jobsQuery.isError && sortedJobs.length === 0 && (
+      {/* Search returned nothing at all and there are no filters to show */}
+      {isSearchComplete && !isLoadingJobs && !jobsQuery.isError && sortedJobs.length === 0 && !showFilterPanel && (
         <EmptyState
           title="No jobs found"
           description="No results matched your search. Try different keywords, remove filters, or expand your location."
         />
       )}
 
-      {sortedJobs.length > 0 && (
-        <>
-          <div className="mb-3 flex items-center justify-between">
-            <p className="text-sm text-gray-600">
-              <span className="font-medium">{jobsQuery.data?.total}</span> jobs found
-              {statusQuery.data?.total_results !== null &&
-                statusQuery.data?.total_results !== undefined && (
-                  <span className="text-gray-400"> (from {statusQuery.data.total_results} scraped)</span>
-                )}
-            </p>
-            <p className="text-sm text-gray-500">
-              Page {page} of {totalPages}
-            </p>
-          </div>
-
+      {/* Main layout: sidebar (when filters available) + results column */}
+      {isSearchComplete && !isLoadingJobs && !jobsQuery.isError && (showFilterPanel || sortedJobs.length > 0) && (
+        <div className={showFilterPanel ? 'flex gap-6 items-start' : undefined}>
+          {/* Left sidebar — always shown when filter data exists, even if current filters yield 0 results */}
           {showFilterPanel && (
-            <ResultsFilterPanel
-              sources={filtersData!.sources}
-              companies={filtersData!.companies}
-              selectedSources={selectedSources}
-              selectedCompanies={selectedCompanies}
-              onSourceChange={handleSourceChange}
-              onCompanyChange={handleCompanyChange}
-            />
+            <aside className="w-52 shrink-0 self-start sticky top-4">
+              <ResultsFilterPanel
+                sources={filtersData!.sources}
+                companies={filtersData!.companies}
+                selectedSources={selectedSources}
+                selectedCompanies={selectedCompanies}
+                onSourceChange={handleSourceChange}
+                onCompanyChange={handleCompanyChange}
+              />
+            </aside>
           )}
 
-          <ul className="flex flex-col gap-3" role="list" aria-label="Job listings">
-            {sortedJobs.map((job) => (
-              <li key={job.id}>
-                <JobCard job={job} />
-              </li>
-            ))}
-          </ul>
+          {/* Right — job list or filter-empty state */}
+          <div className={showFilterPanel ? 'min-w-0 flex-1' : undefined}>
+            {sortedJobs.length === 0 ? (
+              <EmptyState
+                title="No jobs match your filters"
+                description="This source and company combination has no overlap. Try clearing one of the filters."
+              />
+            ) : (
+              <>
+                <div className="mb-3 flex items-center justify-between">
+                  <p className="text-sm text-gray-600">
+                    <span className="font-medium">{jobsQuery.data?.total}</span> jobs found
+                    {statusQuery.data?.total_results !== null &&
+                      statusQuery.data?.total_results !== undefined && (
+                        <span className="text-gray-400"> (from {statusQuery.data.total_results} scraped)</span>
+                      )}
+                  </p>
+                  <p className="text-sm text-gray-500">
+                    Page {page} of {totalPages}
+                  </p>
+                </div>
 
-          {/* Pagination */}
-          {totalPages > 1 && (
-            <nav
-              aria-label="Results pagination"
-              className="mt-6 flex items-center justify-center gap-2"
-            >
-              <button
-                onClick={() => setCriteria({ page: page - 1 })}
-                disabled={page <= 1}
-                aria-label="Previous page"
-                className="rounded-md border border-gray-300 px-3 py-1.5 text-sm font-medium text-gray-700 hover:bg-gray-50 focus:outline-none focus:ring-2 focus:ring-blue-500 disabled:cursor-not-allowed disabled:opacity-40"
-              >
-                &larr; Prev
-              </button>
-              <span className="text-sm text-gray-600">
-                {page} / {totalPages}
-              </span>
-              <button
-                onClick={() => setCriteria({ page: page + 1 })}
-                disabled={page >= totalPages}
-                aria-label="Next page"
-                className="rounded-md border border-gray-300 px-3 py-1.5 text-sm font-medium text-gray-700 hover:bg-gray-50 focus:outline-none focus:ring-2 focus:ring-blue-500 disabled:cursor-not-allowed disabled:opacity-40"
-              >
-                Next &rarr;
-              </button>
-            </nav>
-          )}
-        </>
+                <ul className="flex flex-col gap-3" role="list" aria-label="Job listings">
+                  {sortedJobs.map((job) => (
+                    <li key={job.id}>
+                      <JobCard job={job} />
+                    </li>
+                  ))}
+                </ul>
+
+                {/* Pagination */}
+                {totalPages > 1 && (
+                  <nav
+                    aria-label="Results pagination"
+                    className="mt-6 flex items-center justify-center gap-2"
+                  >
+                    <button
+                      onClick={() => setCriteria({ page: page - 1 })}
+                      disabled={page <= 1}
+                      aria-label="Previous page"
+                      className="rounded-md border border-gray-300 px-3 py-1.5 text-sm font-medium text-gray-700 hover:bg-gray-50 focus:outline-none focus:ring-2 focus:ring-blue-500 disabled:cursor-not-allowed disabled:opacity-40"
+                    >
+                      &larr; Prev
+                    </button>
+                    <span className="text-sm text-gray-600">
+                      {page} / {totalPages}
+                    </span>
+                    <button
+                      onClick={() => setCriteria({ page: page + 1 })}
+                      disabled={page >= totalPages}
+                      aria-label="Next page"
+                      className="rounded-md border border-gray-300 px-3 py-1.5 text-sm font-medium text-gray-700 hover:bg-gray-50 focus:outline-none focus:ring-2 focus:ring-blue-500 disabled:cursor-not-allowed disabled:opacity-40"
+                    >
+                      Next &rarr;
+                    </button>
+                  </nav>
+                )}
+              </>
+            )}
+          </div>
+        </div>
       )}
     </section>
   )

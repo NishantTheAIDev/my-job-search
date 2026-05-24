@@ -10,6 +10,7 @@ class Settings(BaseSettings):
     adzuna_app_key: SecretStr = SecretStr("")
     greenhouse_companies: str = ""
     lever_companies: str = ""
+    themuse_api_key: str = ""  # optional — raises rate limits but not required
     database_url: str = "sqlite:///./data/jobsearch.db"
     resume_storage_dir: str = "./data/resumes"
     log_level: str = "INFO"
