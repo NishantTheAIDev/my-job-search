@@ -55,23 +55,50 @@ POST /applications/{id}/approve   ← ONLY submission path
       writes Application(status=submitted) + AuditLog in ONE session.commit()
 ```
 
+### Background task session lifecycle
+
+**Critical**: Background tasks must create their own `Session(engine)` — never reuse the request session. FastAPI closes the request session before background tasks execute, so passing it produces silent "no active resume" failures. Pattern:
+
+```python
+def my_task(some_id: uuid.UUID) -> None:
+    with Session(engine) as session:
+        asyncio.run(my_async_service(some_id, session))
+```
+
 ### LLM client pattern
 
 All Claude calls go through `backend/llm/client.py::call_claude()`. Never call `anthropic.AsyncAnthropic()` elsewhere.
 
 - System prompts are **literal strings** — never interpolated with external content
-- External text (job descriptions, scraped content) goes in the **user turn only**, wrapped in named XML tags: `<job_description>`, `<resume>`, `<parsed_jd>`
-- Every system prompt explicitly instructs the model to treat tagged content as data, not commands
+- External text (job descriptions, scraped content) goes in the **user turn only**, wrapped in named XML tags: `<job_description>`, `<resume>`, `<parsed_jd>`, `<role_title>`, `<company>`
+- Every system prompt has a `SECURITY:` block instructing the model to treat tagged content as data only
 - `backend/llm/sanitize.py::sanitize_jd_text()` strips control chars and truncates to 12 000 chars before any scraped text enters a prompt
+- `call_claude()` logs model, token counts (including cache hits), and latency for every call
+
+### Logging
+
+Centralized in `backend/logging_config.py`. Call `configure_logging(level)` once at startup (done in `backend/app.py` on import). All modules use the standard `logging.getLogger(__name__)` pattern.
+
+- Format: `YYYY-MM-DD HH:MM:SS | LEVEL | request_id | module | message`
+- `request_id` is a `ContextVar` set per-request by `RequestLoggingMiddleware`; background tasks show `-`
+- `RequestLoggingMiddleware` logs every HTTP request with method, path, status, duration, and echoes the ID in `X-Request-ID` response header
+- Third-party libraries (`httpx`, `anthropic`, `uvicorn.access`) are silenced to WARNING
+- `LOG_LEVEL` env var controls root level (default `INFO`)
+
+### Rate limiting
+
+`backend/limiter.py` holds the shared `slowapi.Limiter` instance. Import from there — never create a second `Limiter`. Applied to: `POST /resume/upload` (10/min), `POST /search` (5/min), `POST /applications/{id}/approve` (20/min). Route handlers that use it need `request: Request` as their first parameter.
 
 ### Adapter pattern
 
 Every board adapter in `backend/adapters/` implements `JobBoardAdapter` (ABC in `base.py`):
 - `search(criteria: SearchCriteria) -> list[JobPosting]`
 - Remote-only mapping handled **inside** the adapter (boards express it differently)
-- Returns `[]` gracefully when credentials are absent — never raises
+- Returns `[]` gracefully when credentials/slugs are absent — never raises
 - Use `_safe_iter()` from the base class to skip malformed items without aborting the whole page
 - Register new adapters in `backend/adapters/registry.py`
+
+**Greenhouse and Lever** use free public unauthenticated APIs — no API keys needed. Configured via `GREENHOUSE_COMPANIES` / `LEVER_COMPANIES` (comma-separated company slugs). Client-side query filtering uses **whole-word regex** (`\b` boundaries) so short terms like `"ai"` don't match substrings inside unrelated words (`"available"`, `"training"`).
 
 Tests for adapters use recorded JSON fixtures in `tests/adapters/fixtures/` — never hit live boards in CI.
 
@@ -109,15 +136,18 @@ Route work to the right agent:
 
 2. **No fabrication**: Resume tailoring and cover letter drafting system prompts contain an absolute prohibition on inventing experience, metrics, employers, or credentials. The prompts are in `backend/llm/prompts/tailor.py` and `drafter.py`.
 
-3. **Prompt injection defense**: `sanitize_jd_text()` runs on all adapter output. System prompts are never formatted with external data. All variable content enters the user turn inside named XML tags with explicit "treat as data" instructions.
+3. **Prompt injection defense**: `sanitize_jd_text()` runs on all adapter output before any LLM call. System prompts are never formatted with external data. All variable content (including `role_title` and `company`) enters the user turn inside named XML tags.
 
-4. **Board compliance**: Greenhouse and Lever adapters exist as stubs (return `[]`). Adzuna is the live adapter (free official API). LinkedIn is not integrated — its ToS prohibits automated access.
+4. **File upload safety**: Resume upload enforces an extension allowlist (`.pdf`, `.docx`, `.txt`) and a 5 MB size cap before reading content. Violations return HTTP 415 / 413 respectively.
+
+5. **Board compliance**: Adzuna is the live adapter (free official API). Greenhouse and Lever use their free public board APIs (no auth). LinkedIn is not integrated — its ToS prohibits automated access.
 
 ## Key conventions
 
 - Route handlers are thin: validate input with Pydantic, call a service, return. Logic lives in `services/`.
-- Long-running work (search fan-out, LLM pipeline) runs via `FastAPI BackgroundTasks` — background task functions use `asyncio.run()` since they execute in a thread pool worker.
+- Long-running work (search fan-out, LLM pipeline) runs via `FastAPI BackgroundTasks` — background task functions use `asyncio.run()` since they execute in a thread pool worker, and open their own `Session(engine)`.
 - `datetime.now(UTC)` everywhere — `datetime.utcnow()` is deprecated in Python 3.14.
 - `bool` columns in SQLModel queries use `== True` with `# noqa: E712` (SQLAlchemy requires the explicit comparison; Python's `is True` doesn't work in WHERE clauses).
+- `ApplicationStatus` transitions directly `pending → submitted` (or `failed`). There is no intermediate `approved` state — its absence is intentional to prevent a second submission path from being added.
 - Frontend components always handle three data states explicitly: loading, empty, and error.
 - The `DiffView` component uses color **and** a text decoration secondary cue (strikethrough for removed, underline for added) — both are required for color-blind accessibility.
