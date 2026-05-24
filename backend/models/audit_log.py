@@ -1,6 +1,5 @@
 import uuid
 from datetime import UTC, datetime
-from typing import Optional
 
 from sqlmodel import Field, SQLModel
 
@@ -11,7 +10,7 @@ class AuditLog(SQLModel, table=True):
     action: str
     actor: str = "user"
     job_title: str
-    company: Optional[str] = None
+    company: str | None = None
     board_url: str
     timestamp: datetime = Field(default_factory=lambda: datetime.now(UTC))
-    metadata_json: Optional[str] = None
+    metadata_json: str | None = None

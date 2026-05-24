@@ -1,4 +1,5 @@
 """Sanitize untrusted job-board text before it enters LLM prompts."""
+
 import re
 
 _MAX_CHARS = 12_000

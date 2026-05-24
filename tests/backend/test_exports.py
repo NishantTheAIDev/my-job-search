@@ -1,4 +1,5 @@
 """Tests for the resume .docx export endpoint."""
+
 import uuid
 
 from fastapi.testclient import TestClient

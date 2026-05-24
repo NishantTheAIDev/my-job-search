@@ -1,4 +1,5 @@
 """Orchestrate the LLM pipeline and manage application state transitions."""
+
 import json
 import logging
 import uuid
@@ -71,9 +72,7 @@ async def prepare_application(
             list(parsed_jd.keys()),
         )
 
-        score, rationale, gaps = await scoring_service.score_resume(
-            resume.text_content, parsed_jd
-        )
+        score, rationale, gaps = await scoring_service.score_resume(resume.text_content, parsed_jd)
         logger.info(
             "prepare_application: job=%s score=%d gaps=%d",
             job_id,
@@ -81,9 +80,12 @@ async def prepare_application(
             len(gaps),
         )
 
-        tailored_text, change_summary, diff_json, tailor_gaps = (
-            await tailoring_service.tailor_resume(resume.text_content, parsed_jd)
-        )
+        (
+            tailored_text,
+            change_summary,
+            diff_json,
+            tailor_gaps,
+        ) = await tailoring_service.tailor_resume(resume.text_content, parsed_jd)
         tailoring_failed = tailored_text == resume.text_content and not change_summary
         logger.info(
             "prepare_application: job=%s resume tailored (failed=%s gaps=%d)",
@@ -198,9 +200,7 @@ def reject_application(app_id: uuid.UUID, session: Session) -> Application:
     if not app:
         raise ApplicationError(f"Application {app_id} not found")
     if app.status not in (ApplicationStatus.pending,):
-        raise InvalidStateError(
-            f"Cannot reject application in status '{app.status}'"
-        )
+        raise InvalidStateError(f"Cannot reject application in status '{app.status}'")
 
     posting = session.get(JobPosting, app.job_posting_id)
     app.status = ApplicationStatus.rejected

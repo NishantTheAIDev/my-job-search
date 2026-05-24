@@ -1,4 +1,5 @@
 """Adzuna job board adapter (free public REST API)."""
+
 import logging
 from datetime import datetime
 
@@ -105,5 +106,7 @@ class AdzunaAdapter(JobBoardAdapter):
                 continue
             postings.append(posting)
 
-        logger.info("adzuna: query=%r page=%d → %d results", criteria.query, criteria.page, len(postings))
+        logger.info(
+            "adzuna: query=%r page=%d → %d results", criteria.query, criteria.page, len(postings)
+        )
         return postings

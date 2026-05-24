@@ -1,4 +1,5 @@
 """Fixture-based tests for the Adzuna adapter. Never hits live endpoints."""
+
 import json
 import re
 from pathlib import Path
@@ -33,6 +34,7 @@ def base_criteria() -> SearchCriteria:
 # 1. Happy-path: normalized postings returned
 # ---------------------------------------------------------------------------
 
+
 async def test_search_returns_normalized_postings(httpx_mock, adapter, base_criteria, monkeypatch):
     monkeypatch.setattr(settings, "adzuna_app_id", "test_id")
     monkeypatch.setattr(settings, "adzuna_app_key", settings.adzuna_app_key.__class__("test_key"))
@@ -66,6 +68,7 @@ async def test_search_returns_normalized_postings(httpx_mock, adapter, base_crit
 # 2. Remote-only post-filter: only the "Remote" location posting survives
 # ---------------------------------------------------------------------------
 
+
 async def test_remote_only_filter(httpx_mock, adapter, monkeypatch):
     monkeypatch.setattr(settings, "adzuna_app_id", "test_id")
     monkeypatch.setattr(settings, "adzuna_app_key", settings.adzuna_app_key.__class__("test_key"))
@@ -86,6 +89,7 @@ async def test_remote_only_filter(httpx_mock, adapter, monkeypatch):
 # ---------------------------------------------------------------------------
 # 3. Compensation formatting
 # ---------------------------------------------------------------------------
+
 
 async def test_compensation_formatting(httpx_mock, adapter, base_criteria, monkeypatch):
     monkeypatch.setattr(settings, "adzuna_app_id", "test_id")
@@ -111,6 +115,7 @@ async def test_compensation_formatting(httpx_mock, adapter, base_criteria, monke
 # 4. Missing credentials → empty list, no HTTP call made
 # ---------------------------------------------------------------------------
 
+
 async def test_missing_credentials_returns_empty(adapter, monkeypatch):
     monkeypatch.setattr(settings, "adzuna_app_id", "")
 
@@ -122,6 +127,7 @@ async def test_missing_credentials_returns_empty(adapter, monkeypatch):
 # ---------------------------------------------------------------------------
 # 5. Malformed item is skipped; valid items are still returned
 # ---------------------------------------------------------------------------
+
 
 async def test_malformed_item_skipped(httpx_mock, adapter, base_criteria, monkeypatch):
     monkeypatch.setattr(settings, "adzuna_app_id", "test_id")

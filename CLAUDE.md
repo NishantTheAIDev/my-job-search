@@ -18,6 +18,9 @@ uv run pytest                # all backend tests
 uv run pytest tests/backend/test_approval_gate.py -v   # single file
 uv run pytest path/to/test.py::test_name               # single test
 uv add <package>             # add backend dependency
+uv run ruff check .          # lint
+uv run ruff check --fix .    # lint + auto-fix
+uv run ruff format .         # format
 
 # Frontend (from frontend/)
 npm run dev                  # Vite dev server on :5173

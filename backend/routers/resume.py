@@ -54,9 +54,10 @@ async def upload_resume(
     filename = file.filename or "resume.txt"
     ext = Path(filename).suffix.lower()
     if ext not in _ALLOWED_EXTENSIONS:
+        allowed = ", ".join(sorted(_ALLOWED_EXTENSIONS))
         raise HTTPException(
             status_code=415,
-            detail=f"Unsupported file type '{ext}'. Allowed: {', '.join(sorted(_ALLOWED_EXTENSIONS))}",
+            detail=f"Unsupported file type '{ext}'. Allowed: {allowed}",
         )
 
     content = await file.read()

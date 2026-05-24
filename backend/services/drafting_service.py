@@ -1,4 +1,5 @@
 """Draft a cover letter from a tailored resume and parsed JD."""
+
 import json
 import logging
 

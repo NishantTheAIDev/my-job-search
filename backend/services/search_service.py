@@ -1,4 +1,5 @@
 """Fan-out search across all board adapters, dedup, and persist results."""
+
 import asyncio
 import logging
 import uuid
@@ -54,9 +55,11 @@ async def run_search(
         )
 
         all_postings: list[JobPosting] = []
-        for adapter, result in zip(adapters, raw_results):
+        for adapter, result in zip(adapters, raw_results, strict=True):
             if isinstance(result, Exception):
-                logger.error("search %s: adapter=%s failed: %s", search_job_id, adapter.source, result)
+                logger.error(
+                    "search %s: adapter=%s failed: %s", search_job_id, adapter.source, result
+                )
                 continue
             logger.info(
                 "search %s: adapter=%s returned %d results",

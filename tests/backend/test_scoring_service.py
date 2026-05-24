@@ -1,4 +1,5 @@
 """Tests for the resume scoring service (LLM mocked)."""
+
 import json
 from unittest.mock import AsyncMock, patch
 
