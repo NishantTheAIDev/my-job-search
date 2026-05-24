@@ -6,13 +6,23 @@ import re
 from datetime import UTC, datetime
 
 import httpx
-from tenacity import retry, retry_if_exception_type, stop_after_attempt, wait_exponential
+from tenacity import RetryError, retry, retry_if_exception, stop_after_attempt, wait_exponential
 
 from backend.adapters.base import JobBoardAdapter
 from backend.config import settings
 from backend.models.job_posting import JobPosting, RemoteStatus, SearchCriteria
 
 logger = logging.getLogger(__name__)
+
+
+def _is_retryable(exc: BaseException) -> bool:
+    """Only retry on 5xx server errors and transport failures, not 4xx client errors."""
+    if isinstance(exc, httpx.TransportError):
+        return True
+    if isinstance(exc, httpx.HTTPStatusError):
+        return exc.response.status_code >= 500
+    return False
+
 
 _BASE_URL = "https://api.lever.co/v0/postings/{company}"
 
@@ -41,7 +51,7 @@ def _matches_query(title: str, description: str, query: str) -> bool:
         return True
     terms = query.lower().split()
     text = (title + " " + description).lower()
-    return all(term in text for term in terms)
+    return all(bool(re.search(r"\b" + re.escape(t) + r"\b", text)) for t in terms)
 
 
 class LeverAdapter(JobBoardAdapter):
@@ -54,7 +64,7 @@ class LeverAdapter(JobBoardAdapter):
         return [s.strip() for s in raw.split(",") if s.strip()]
 
     @retry(
-        retry=retry_if_exception_type((httpx.HTTPStatusError, httpx.TransportError)),
+        retry=retry_if_exception(_is_retryable),
         wait=wait_exponential(min=1, max=30),
         stop=stop_after_attempt(3),
     )
@@ -90,7 +100,15 @@ class LeverAdapter(JobBoardAdapter):
         try:
             raw = await self._fetch_slug(slug)
         except Exception as exc:
-            logger.error("lever[%s]: fetch failed: %s", slug, exc)
+            cause = exc.last_attempt.exception() if isinstance(exc, RetryError) else exc
+            if isinstance(cause, httpx.HTTPStatusError):
+                logger.error(
+                    "lever[%s]: HTTP %d — slug may not use Lever",
+                    slug,
+                    cause.response.status_code,
+                )
+            else:
+                logger.error("lever[%s]: fetch failed: %s", slug, cause)
             return []
 
         postings: list[JobPosting] = []

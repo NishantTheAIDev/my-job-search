@@ -47,6 +47,11 @@ export interface JobsListResponse {
   page_size: number
 }
 
+export interface JobFiltersResponse {
+  sources: string[]
+  companies: string[]
+}
+
 // Applications
 export type ApplicationStatus = 'pending' | 'approved' | 'rejected' | 'submitted' | 'failed'
 

@@ -1,12 +1,13 @@
-import { useEffect, useRef } from 'react'
+import { useEffect, useRef, useState } from 'react'
 import { useQuery } from '@tanstack/react-query'
 import { getSearchStatus } from '../../api/search'
-import { listJobs } from '../../api/jobs'
+import { listJobs, getJobFilters } from '../../api/jobs'
 import { useJobSearchStore } from '../../store/useJobSearchStore'
 import { LoadingSpinner } from '../shared/LoadingSpinner'
 import { ErrorBanner } from '../shared/ErrorBanner'
 import { EmptyState } from '../shared/EmptyState'
 import { JobCard } from './JobCard'
+import { ResultsFilterPanel } from './ResultsFilterPanel'
 
 const PAGE_SIZE = 20
 
@@ -15,6 +16,15 @@ export function ResultsList() {
   const criteria = useJobSearchStore((s) => s.criteria)
   const setCriteria = useJobSearchStore((s) => s.setCriteria)
   const page = criteria.page ?? 1
+
+  const [selectedSources, setSelectedSources] = useState<string[]>([])
+  const [selectedCompanies, setSelectedCompanies] = useState<string[]>([])
+
+  // Reset filter state whenever the active search changes
+  useEffect(() => {
+    setSelectedSources([])
+    setSelectedCompanies([])
+  }, [activeSearchJobId])
 
   // Poll search status
   const statusQuery = useQuery({
@@ -30,11 +40,24 @@ export function ResultsList() {
   const isSearchComplete = statusQuery.data?.status === 'complete'
   const isSearchFailed = statusQuery.data?.status === 'failed'
 
-  // Fetch jobs once complete
+  // Fetch available filter options once the search is done
+  const filtersQuery = useQuery({
+    queryKey: ['jobFilters', activeSearchJobId],
+    queryFn: () => getJobFilters(activeSearchJobId!),
+    enabled: isSearchComplete && !!activeSearchJobId,
+  })
+
+  // Fetch jobs once complete, re-fetch when filters or page change
   const jobsQuery = useQuery({
-    queryKey: ['jobs', activeSearchJobId, page],
+    queryKey: ['jobs', activeSearchJobId, page, selectedSources, selectedCompanies],
     queryFn: () =>
-      listJobs({ search_job_id: activeSearchJobId!, page, page_size: PAGE_SIZE }),
+      listJobs({
+        search_job_id: activeSearchJobId!,
+        page,
+        page_size: PAGE_SIZE,
+        source: selectedSources.length ? selectedSources : undefined,
+        company: selectedCompanies.length ? selectedCompanies : undefined,
+      }),
     enabled: isSearchComplete && !!activeSearchJobId,
   })
 
@@ -45,6 +68,17 @@ export function ResultsList() {
       liveRef.current.textContent = `${jobsQuery.data.total} results loaded.`
     }
   }, [jobsQuery.data])
+
+  // Reset to page 1 when filters change
+  function handleSourceChange(sources: string[]) {
+    setSelectedSources(sources)
+    setCriteria({ page: 1 })
+  }
+
+  function handleCompanyChange(companies: string[]) {
+    setSelectedCompanies(companies)
+    setCriteria({ page: 1 })
+  }
 
   if (!activeSearchJobId) return null
 
@@ -81,6 +115,14 @@ export function ResultsList() {
   const totalPages = jobsQuery.data
     ? Math.ceil(jobsQuery.data.total / PAGE_SIZE)
     : 0
+
+  // Show the filter panel only when there is meaningful filter data:
+  // at least 2 distinct sources OR at least 1 company.
+  const filtersData = filtersQuery.data
+  const showFilterPanel =
+    isSearchComplete &&
+    filtersData != null &&
+    (filtersData.sources.length >= 2 || filtersData.companies.length > 0)
 
   return (
     <section aria-label="Search results" className="mx-auto w-full max-w-3xl">
@@ -122,6 +164,17 @@ export function ResultsList() {
               Page {page} of {totalPages}
             </p>
           </div>
+
+          {showFilterPanel && (
+            <ResultsFilterPanel
+              sources={filtersData!.sources}
+              companies={filtersData!.companies}
+              selectedSources={selectedSources}
+              selectedCompanies={selectedCompanies}
+              onSourceChange={handleSourceChange}
+              onCompanyChange={handleCompanyChange}
+            />
+          )}
 
           <ul className="flex flex-col gap-3" role="list" aria-label="Job listings">
             {sortedJobs.map((job) => (

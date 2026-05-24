@@ -105,22 +105,37 @@ Every board adapter in `backend/adapters/` implements `JobBoardAdapter` (ABC in 
 
 Tests for adapters use recorded JSON fixtures in `tests/adapters/fixtures/` — never hit live boards in CI.
 
+### Filter feature
+
+`GET /jobs/filters?search_job_id=...` returns `{ sources, companies }` (distinct sorted values from a search's postings). `GET /jobs` accepts multi-value `source` and `company` params applied as SQL `IN` clauses.
+
+Multi-value query param patterns:
+- **FastAPI**: `source: list[str] | None = Query(default=None)` — natively accepts repeated `source=a&source=b`
+- **Frontend**: `URLSearchParams` with `.append()` to serialize `string[]` correctly (not `.set()`)
+
+**Router ordering**: define `GET /jobs/filters` **before** `GET /jobs/{job_id}` in the router — otherwise FastAPI tries to parse the literal string "filters" as a UUID and returns 422. This applies to any route with a named path that would otherwise be shadowed by a `/{uuid}` catch-all.
+
 ### Frontend data flow
 
 ```
-Zustand store (useJobSearchStore)  ← global UI state (active IDs, resumeUploaded)
+Zustand store (useJobSearchStore)  ← global UI state (active IDs, resumeUploaded, criteria/page)
 TanStack Query                     ← all server state / cache / polling
 
 Search: SearchForm → POST /search → store activeSearchJobId
         ResultsList polls GET /search/{id}/status every 2s (refetchInterval)
-        → when complete, fetches GET /jobs?search_job_id=...
+        → when complete, fetches GET /jobs?search_job_id=... and GET /jobs/filters
+
+Filter: ResultsFilterPanel (source pills + company checkboxes)
+        selectedSources / selectedCompanies in local React state — NOT URL-synced
+        resets to [] whenever activeSearchJobId changes
+        shown only when ≥2 distinct sources OR ≥1 company
 
 Apply:  JobCard → POST /jobs/{id}/prepare → store activeApplicationId
         ResumeEditor slide-over → DiffView + cover letter preview
         ApprovalScreen → ConfirmationModal → POST /applications/{id}/approve
 ```
 
-Filter state is synced to URL query params (`window.history.replaceState`) so searches survive refresh.
+`criteria.page` and search filters (query, remote_only) are synced to URL query params (`window.history.replaceState`) so searches survive refresh. Source/company filter state is local and intentionally ephemeral.
 
 ## Agents
 
