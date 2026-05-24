@@ -1,4 +1,5 @@
 """Tailor a resume to a job description and compute a diff."""
+
 import difflib
 import json
 import logging
@@ -32,9 +33,7 @@ def _compute_diff_json(original: str, tailored: str) -> str:
     return json.dumps(hunks)
 
 
-async def tailor_resume(
-    resume_text: str, parsed_jd: dict
-) -> tuple[str, str, str, list[str]]:
+async def tailor_resume(resume_text: str, parsed_jd: dict) -> tuple[str, str, str, list[str]]:
     """Return (tailored_resume_text, change_summary, diff_json, gaps)."""
     parsed_jd_json = json.dumps(parsed_jd, indent=2)
     user = tailor_prompts.build_user_prompt(resume_text, parsed_jd_json)

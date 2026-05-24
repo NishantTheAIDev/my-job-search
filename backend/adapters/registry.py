@@ -1,4 +1,5 @@
 """Adapter registry: maps source names to adapter classes."""
+
 from backend.adapters.adzuna import AdzunaAdapter
 from backend.adapters.base import JobBoardAdapter
 from backend.adapters.greenhouse import GreenhouseAdapter

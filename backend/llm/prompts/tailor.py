@@ -24,7 +24,4 @@ Return ONLY the JSON. No markdown fences."""
 
 
 def build_user_prompt(resume_text: str, parsed_jd_json: str) -> str:
-    return (
-        f"<resume>\n{resume_text}\n</resume>\n\n"
-        f"<parsed_jd>\n{parsed_jd_json}\n</parsed_jd>"
-    )
+    return f"<resume>\n{resume_text}\n</resume>\n\n<parsed_jd>\n{parsed_jd_json}\n</parsed_jd>"

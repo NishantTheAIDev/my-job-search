@@ -1,4 +1,5 @@
 """Score a resume against a parsed job description."""
+
 import json
 import logging
 

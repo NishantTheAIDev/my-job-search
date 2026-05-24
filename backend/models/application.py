@@ -1,12 +1,11 @@
 import uuid
 from datetime import UTC, datetime
-from enum import Enum
-from typing import Optional
+from enum import StrEnum
 
 from sqlmodel import Field, SQLModel
 
 
-class ApplicationStatus(str, Enum):
+class ApplicationStatus(StrEnum):
     pending = "pending"
     # NOTE: transitions go pending -> submitted (or failed); "approved" is intentionally absent
     # so there is no intermediate state that a second call site could treat as submission-ready.
@@ -27,6 +26,6 @@ class Application(SQLModel, table=True):
     match_rationale: str = ""
     tailoring_failed: bool = False
     created_at: datetime = Field(default_factory=lambda: datetime.now(UTC))
-    approved_at: Optional[datetime] = None
-    submitted_at: Optional[datetime] = None
-    rejected_at: Optional[datetime] = None
+    approved_at: datetime | None = None
+    submitted_at: datetime | None = None
+    rejected_at: datetime | None = None

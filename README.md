@@ -88,6 +88,25 @@ npx vitest run        # run once
 npx vitest            # watch mode
 ```
 
+## Linting
+
+**Backend** uses [Ruff](https://docs.astral.sh/ruff/) for linting and formatting:
+
+```bash
+uv run ruff check .          # check for issues
+uv run ruff check --fix .    # check and auto-fix
+uv run ruff format .         # format code
+```
+
+Rules enabled: `E/W` (pycodestyle), `F` (pyflakes), `I` (isort), `UP` (pyupgrade), `B` (bugbear), `SIM` (simplify). Line length is 100. LLM prompt files and test files are excluded from the line-length rule since prompt prose and fixture assertions are legitimately long.
+
+**Frontend** uses ESLint (configured in `frontend/eslint.config.js`):
+
+```bash
+cd frontend
+npm run lint
+```
+
 ## Project structure
 
 ```

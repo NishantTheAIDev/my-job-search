@@ -1,4 +1,5 @@
 """Fixture-based tests for the Greenhouse adapter. Never hits live endpoints."""
+
 import json
 import re
 from pathlib import Path
@@ -33,6 +34,7 @@ def base_criteria() -> SearchCriteria:
 # 1. Happy-path: normalized postings returned
 # ---------------------------------------------------------------------------
 
+
 async def test_search_returns_normalized_postings(httpx_mock, adapter, base_criteria, monkeypatch):
     monkeypatch.setattr(settings, "greenhouse_companies", "acme")
 
@@ -64,6 +66,7 @@ async def test_search_returns_normalized_postings(httpx_mock, adapter, base_crit
 # 2. Remote-only filter: only "Remote" and "Remote - US" postings survive
 # ---------------------------------------------------------------------------
 
+
 async def test_remote_only_filter(httpx_mock, adapter, monkeypatch):
     monkeypatch.setattr(settings, "greenhouse_companies", "acme")
 
@@ -87,6 +90,7 @@ async def test_remote_only_filter(httpx_mock, adapter, monkeypatch):
 # 3. Query filter: only postings matching "python" are returned
 # ---------------------------------------------------------------------------
 
+
 async def test_query_filter(httpx_mock, adapter, monkeypatch):
     monkeypatch.setattr(settings, "greenhouse_companies", "acme")
 
@@ -107,6 +111,7 @@ async def test_query_filter(httpx_mock, adapter, monkeypatch):
 # ---------------------------------------------------------------------------
 # 4. HTML is stripped from the description field
 # ---------------------------------------------------------------------------
+
 
 async def test_html_stripped_from_description(httpx_mock, adapter, monkeypatch):
     monkeypatch.setattr(settings, "greenhouse_companies", "acme")
@@ -132,6 +137,7 @@ async def test_html_stripped_from_description(httpx_mock, adapter, monkeypatch):
 # 5. No slugs configured → returns [] without making any HTTP call
 # ---------------------------------------------------------------------------
 
+
 async def test_no_slugs_returns_empty(adapter, monkeypatch):
     monkeypatch.setattr(settings, "greenhouse_companies", "")
 
@@ -143,6 +149,7 @@ async def test_no_slugs_returns_empty(adapter, monkeypatch):
 # ---------------------------------------------------------------------------
 # 6. Malformed item (missing id/absolute_url) is skipped; valid items returned
 # ---------------------------------------------------------------------------
+
 
 async def test_malformed_item_skipped(httpx_mock, adapter, monkeypatch):
     monkeypatch.setattr(settings, "greenhouse_companies", "acme")

@@ -7,6 +7,7 @@ if __name__ == "__main__":
     # backend/app.py also calls this on import; the second call is idempotent.
     from backend.config import settings
     from backend.logging_config import configure_logging
+
     configure_logging(settings.log_level)
 
     host = os.getenv("HOST", "127.0.0.1")

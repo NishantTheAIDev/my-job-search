@@ -8,6 +8,7 @@ Request ID propagation uses a ContextVar so every log line emitted during a
 request (including in background-called services) carries the same req_id.
 Background tasks show "-" as the request ID since they run outside a request.
 """
+
 import logging
 import logging.config
 import time
@@ -44,8 +45,7 @@ def configure_logging(level: str = "INFO") -> None:
             "formatters": {
                 "default": {
                     "format": (
-                        "%(asctime)s | %(levelname)-8s | %(request_id)s"
-                        " | %(name)s | %(message)s"
+                        "%(asctime)s | %(levelname)-8s | %(request_id)s | %(name)s | %(message)s"
                     ),
                     "datefmt": "%Y-%m-%d %H:%M:%S",
                 },

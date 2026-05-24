@@ -1,4 +1,5 @@
 """JobBoardAdapter ABC and _safe_iter helper."""
+
 import logging
 from abc import ABC, abstractmethod
 from collections.abc import Iterator

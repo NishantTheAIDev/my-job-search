@@ -1,6 +1,6 @@
 """Application management endpoints."""
+
 import uuid
-from typing import Optional
 
 from fastapi import APIRouter, Depends, HTTPException, Request
 from pydantic import BaseModel
@@ -30,9 +30,9 @@ class ApplicationResponse(BaseModel):
     cover_letter_text: str
     tailoring_failed: bool
     created_at: str
-    approved_at: Optional[str]
-    submitted_at: Optional[str]
-    rejected_at: Optional[str]
+    approved_at: str | None
+    submitted_at: str | None
+    rejected_at: str | None
 
 
 def _to_response(app: Application) -> ApplicationResponse:
@@ -55,7 +55,7 @@ def _to_response(app: Application) -> ApplicationResponse:
 
 @router.get("", response_model=list[ApplicationResponse])
 def list_applications(
-    status: Optional[ApplicationStatus] = None,
+    status: ApplicationStatus | None = None,
     session: Session = Depends(get_session),
 ):
     query = select(Application)
@@ -79,9 +79,9 @@ def approve(request: Request, app_id: uuid.UUID, session: Session = Depends(get_
         app = approve_application(app_id, session)
         return _to_response(app)
     except InvalidStateError as exc:
-        raise HTTPException(status_code=409, detail=str(exc))
+        raise HTTPException(status_code=409, detail=str(exc)) from exc
     except ApplicationError as exc:
-        raise HTTPException(status_code=404, detail=str(exc))
+        raise HTTPException(status_code=404, detail=str(exc)) from exc
 
 
 @router.post("/{app_id}/reject", response_model=ApplicationResponse)
@@ -90,6 +90,6 @@ def reject(app_id: uuid.UUID, session: Session = Depends(get_session)):
         app = reject_application(app_id, session)
         return _to_response(app)
     except InvalidStateError as exc:
-        raise HTTPException(status_code=409, detail=str(exc))
+        raise HTTPException(status_code=409, detail=str(exc)) from exc
     except ApplicationError as exc:
-        raise HTTPException(status_code=404, detail=str(exc))
+        raise HTTPException(status_code=404, detail=str(exc)) from exc

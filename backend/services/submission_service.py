@@ -4,6 +4,7 @@ Called ONLY from application_service.approve_application().
 For MVP, this is a stub that logs the submission — real board-specific
 submission (form-fill, email, API) is a future enhancement.
 """
+
 import logging
 
 from sqlmodel import Session

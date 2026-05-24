@@ -1,4 +1,5 @@
 """Resume .docx export endpoint."""
+
 import io
 import re
 import uuid
@@ -24,9 +25,7 @@ def _looks_like_heading(line: str) -> bool:
     if stripped == stripped.upper() and len(stripped) <= 40 and stripped.isalpha():
         return True
     # Short line ending with colon
-    if stripped.endswith(":") and len(stripped) <= 40:
-        return True
-    return False
+    return stripped.endswith(":") and len(stripped) <= 40
 
 
 def _sanitize_filename_part(text: str, max_len: int = 20) -> str:

@@ -34,5 +34,23 @@ dev = [
 asyncio_mode = "auto"
 testpaths = ["tests"]
 
+[tool.ruff]
+line-length = 100
+target-version = "py314"
+
 [tool.ruff.lint]
-select = ["E", "F", "I", "UP"]
+select = ["E", "F", "I", "UP", "B", "SIM", "W"]
+ignore = [
+    "E712",   # SQLAlchemy requires `== True` in WHERE clauses; `is True` doesn't work
+    "B008",   # FastAPI uses function calls in default arguments (Depends, File, Query)
+    "SIM117", # nested `with` statements are fine for session + asyncio.run patterns
+]
+
+[tool.ruff.lint.isort]
+known-first-party = ["backend"]
+
+[tool.ruff.lint.per-file-ignores]
+# LLM prompt strings are intentionally long prose — wrapping would break the text
+"backend/llm/prompts/*.py" = ["E501"]
+# Test files can use longer lines for assertion messages and fixture data
+"tests/**/*.py" = ["E501"]

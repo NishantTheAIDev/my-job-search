@@ -1,4 +1,5 @@
 """Greenhouse job board adapter (public board API, per-company-slug)."""
+
 import asyncio
 import logging
 import re
@@ -80,7 +81,9 @@ class GreenhouseAdapter(JobBoardAdapter):
                 posted_date=_parse_date(item.get("updated_at")),
             )
         except (KeyError, TypeError) as exc:
-            logger.warning("greenhouse[%s]: failed to normalize item %s: %s", slug, item.get("id"), exc)
+            logger.warning(
+                "greenhouse[%s]: failed to normalize item %s: %s", slug, item.get("id"), exc
+            )
             return None
 
     async def _search_slug(self, slug: str, criteria: SearchCriteria) -> list[JobPosting]:

@@ -7,6 +7,7 @@ Critical invariants verified:
 4. submitted_at is never set without a corresponding AuditLog row.
 5. Direct call to submission_service.submit() is not exposed — only approve_application() calls it.
 """
+
 import uuid
 
 import pytest
@@ -81,9 +82,7 @@ def test_approve_pending_succeeds(session: Session):
 def test_approve_creates_audit_log(session: Session):
     app = _make_pending_app(session)
     approve_application(app.id, session)
-    logs = session.exec(
-        select(AuditLog).where(AuditLog.application_id == app.id)
-    ).all()
+    logs = session.exec(select(AuditLog).where(AuditLog.application_id == app.id)).all()
     assert len(logs) == 1
     assert logs[0].action == "submitted"
 
@@ -110,9 +109,7 @@ def test_submitted_at_always_has_audit_log(session: Session):
     session.refresh(app)
     # Every application with submitted_at must have an AuditLog row
     if app.submitted_at is not None:
-        logs = session.exec(
-            select(AuditLog).where(AuditLog.application_id == app.id)
-        ).all()
+        logs = session.exec(select(AuditLog).where(AuditLog.application_id == app.id)).all()
         assert len(logs) >= 1
 
 
@@ -126,9 +123,7 @@ def test_reject_pending_succeeds(session: Session):
 def test_reject_creates_audit_log(session: Session):
     app = _make_pending_app(session)
     reject_application(app.id, session)
-    logs = session.exec(
-        select(AuditLog).where(AuditLog.application_id == app.id)
-    ).all()
+    logs = session.exec(select(AuditLog).where(AuditLog.application_id == app.id)).all()
     assert len(logs) == 1
     assert logs[0].action == "rejected"
 
