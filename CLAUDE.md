@@ -166,7 +166,7 @@ Route work to the right agent:
 
 4. **File upload safety**: Resume upload enforces an extension allowlist (`.pdf`, `.docx`, `.txt`) and a 5 MB size cap before reading content. Violations return HTTP 415 / 413 respectively.
 
-5. **Board compliance**: Adzuna is the live adapter (free official API). Greenhouse and Lever use their free public board APIs (no auth). LinkedIn is not integrated — its ToS prohibits automated access.
+5. **Board compliance**: Adzuna uses its free official API. Greenhouse and Lever use their free public board APIs (no auth). LinkedIn uses the public guest search endpoint (no auth, HTML-parsed with `beautifulsoup4`). Remotive and The Muse use their free public APIs.
 
 ## Key conventions
 
