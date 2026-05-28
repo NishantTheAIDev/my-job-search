@@ -2,7 +2,9 @@
 
 from backend.adapters.adzuna import AdzunaAdapter
 from backend.adapters.base import JobBoardAdapter
+from backend.adapters.google import GoogleJobsAdapter
 from backend.adapters.greenhouse import GreenhouseAdapter
+from backend.adapters.indeed import IndeedAdapter
 from backend.adapters.lever import LeverAdapter
 from backend.adapters.linkedin import LinkedInAdapter
 from backend.adapters.remotive import RemotiveAdapter
@@ -10,7 +12,9 @@ from backend.adapters.themuse import TheMuseAdapter
 
 ADAPTERS: dict[str, type[JobBoardAdapter]] = {
     "adzuna": AdzunaAdapter,
+    "google": GoogleJobsAdapter,
     "greenhouse": GreenhouseAdapter,
+    "indeed": IndeedAdapter,
     "lever": LeverAdapter,
     "linkedin": LinkedInAdapter,
     "remotive": RemotiveAdapter,
