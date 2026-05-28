@@ -42,8 +42,8 @@ ADZUNA_APP_ID=your_app_id           # required for job search
 ADZUNA_APP_KEY=your_app_key         # required for job search
 
 # Optional: comma-separated company slugs for additional boards
-GREENHOUSE_COMPANIES=stripe,notion,figma
-LEVER_COMPANIES=stripe,notion
+GREENHOUSE_COMPANIES=anthropic,databricks,stripe,figma
+LEVER_COMPANIES=netflix
 ```
 
 ### 3. Install frontend dependencies
@@ -141,8 +141,8 @@ my-job-search/
 │       ├── base.py             # JobBoardAdapter ABC
 │       ├── registry.py         # Source → adapter mapping
 │       ├── adzuna.py           # Adzuna REST API (primary)
-│       ├── greenhouse.py       # Greenhouse public board API (stub)
-│       └── lever.py            # Lever public v0 API (stub)
+│       ├── greenhouse.py       # Greenhouse public board API (no auth)
+│       └── lever.py            # Lever public v0 API (no auth)
 │
 ├── frontend/src/
 │   ├── types/index.ts          # TypeScript mirrors of backend schemas
@@ -174,7 +174,8 @@ my-job-search/
 | `GET` | `/resume` | Get active resume metadata |
 | `POST` | `/search` | Start a job search (background) |
 | `GET` | `/search/{id}/status` | Poll search progress |
-| `GET` | `/jobs` | List results (`?search_job_id=&page=&min_score=`) |
+| `GET` | `/jobs` | List results (`?search_job_id=&page=&min_score=&source=&company=`) |
+| `GET` | `/jobs/filters` | Distinct sources and companies for a search (`?search_job_id=`) |
 | `GET` | `/jobs/{id}` | Get single job posting |
 | `POST` | `/jobs/{id}/prepare` | Start LLM pipeline for a job (background) |
 | `GET` | `/applications` | List applications (`?status=pending`) |

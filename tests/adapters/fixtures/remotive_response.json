@@ -1,0 +1,62 @@
+{
+  "job-count": 4,
+  "total-job-count": 4,
+  "jobs": [
+    {
+      "id": 6001,
+      "url": "https://remotive.com/remote-jobs/software-dev/senior-ai-engineer-6001",
+      "title": "Senior AI Engineer",
+      "company_name": "TechCorp",
+      "company_logo": "https://remotive.com/job/6001/logo",
+      "category": "Software Development",
+      "tags": ["python", "pytorch", "ml"],
+      "job_type": "full_time",
+      "publication_date": "2024-05-01T00:00:00",
+      "candidate_required_location": "Worldwide",
+      "salary": "$120,000 - $160,000",
+      "description": "<p>Build <strong>AI</strong> systems with <em>Python</em> and PyTorch at scale.</p>"
+    },
+    {
+      "id": 6002,
+      "url": "https://remotive.com/remote-jobs/software-dev/backend-developer-6002",
+      "title": "Backend Developer",
+      "company_name": "StartupXYZ",
+      "company_logo": "https://remotive.com/job/6002/logo",
+      "category": "Software Development",
+      "tags": ["python", "fastapi"],
+      "job_type": "full_time",
+      "publication_date": "2024-05-02T00:00:00",
+      "candidate_required_location": "USA Only",
+      "salary": "",
+      "description": "<p>Python backend developer with FastAPI experience.</p>"
+    },
+    {
+      "id": 6003,
+      "url": "https://remotive.com/remote-jobs/data-science/data-scientist-6003",
+      "title": "Data Scientist",
+      "company_name": "DataFirm",
+      "company_logo": "https://remotive.com/job/6003/logo",
+      "category": "Data Science",
+      "tags": ["python", "tensorflow"],
+      "job_type": "full_time",
+      "publication_date": "2024-05-03T00:00:00",
+      "candidate_required_location": "India",
+      "salary": "₹30,00,000 - ₹50,00,000",
+      "description": "<p>Data scientist role based in India.</p>"
+    },
+    {
+      "id": 6004,
+      "url": "https://remotive.com/remote-jobs/marketing/marketing-manager-6004",
+      "title": "Marketing Manager",
+      "company_name": "BrandCo",
+      "company_logo": "https://remotive.com/job/6004/logo",
+      "category": "Marketing",
+      "tags": ["marketing", "europe"],
+      "job_type": "full_time",
+      "publication_date": "2024-05-04T00:00:00",
+      "candidate_required_location": "Europe Only",
+      "salary": "€60,000 - €80,000",
+      "description": "<p>Lead our <strong>European</strong> marketing campaigns.</p>"
+    }
+  ]
+}

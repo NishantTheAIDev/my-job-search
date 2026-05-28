@@ -33,6 +33,11 @@ class JobsListResponse(BaseModel):
     page_size: int
 
 
+class JobFiltersResponse(BaseModel):
+    sources: list[str]
+    companies: list[str]
+
+
 def _to_response(p: JobPosting) -> JobPostingResponse:
     return JobPostingResponse(
         id=p.id,
@@ -52,6 +57,8 @@ def _to_response(p: JobPosting) -> JobPostingResponse:
 def list_jobs(
     search_job_id: uuid.UUID,
     min_score: int | None = Query(default=None),
+    source: list[str] | None = Query(default=None),
+    company: list[str] | None = Query(default=None),
     page: int = Query(default=1, ge=1),
     page_size: int = Query(default=20, ge=1, le=100),
     session: Session = Depends(get_session),
@@ -59,6 +66,12 @@ def list_jobs(
     query = select(JobPosting).where(JobPosting.search_job_id == search_job_id)
     if min_score is not None:
         query = query.where(JobPosting.match_score >= min_score)
+    if source:
+        query = query.where(JobPosting.source.in_(source))
+    if company:
+        query = query.where(JobPosting.company.in_(company))
+    if source or company:
+        logger.debug("list_jobs: filtering source=%s company=%s", source, company)
 
     all_items = session.exec(query).all()
     total = len(all_items)
@@ -71,6 +84,19 @@ def list_jobs(
         page=page,
         page_size=page_size,
     )
+
+
+@router.get("/filters", response_model=JobFiltersResponse)
+def get_job_filters(
+    search_job_id: uuid.UUID,
+    session: Session = Depends(get_session),
+):
+    postings = session.exec(
+        select(JobPosting).where(JobPosting.search_job_id == search_job_id)
+    ).all()
+    sources = sorted({p.source for p in postings})
+    companies = sorted({p.company for p in postings if p.company})
+    return JobFiltersResponse(sources=sources, companies=companies)
 
 
 @router.get("/{job_id}", response_model=JobPostingResponse)

@@ -103,24 +103,47 @@ Every board adapter in `backend/adapters/` implements `JobBoardAdapter` (ABC in 
 
 **Greenhouse and Lever** use free public unauthenticated APIs — no API keys needed. Configured via `GREENHOUSE_COMPANIES` / `LEVER_COMPANIES` (comma-separated company slugs). Client-side query filtering uses **whole-word regex** (`\b` boundaries) so short terms like `"ai"` don't match substrings inside unrelated words (`"available"`, `"training"`).
 
+**Adzuna pagination note** *(future refactor candidate)*: `criteria.page` is passed directly into the Adzuna URL, so each `search()` call fetches exactly one page (20 results). All other adapters ignore `criteria.page` and return their full result set in one call. This means paging only produces new results from Adzuna; the other boards return the same results on every page, which `_deduplicate()` silently discards. Fix options: (a) have Adzuna loop internally over N pages like the other adapters, or (b) explicitly document `criteria.page` as an Adzuna-only hint in the adapter contract.
+
+**Remotive** (`https://remotive.com/api/remote-jobs`) — free public API, no auth. Every listing is remote by definition. Hard rate limit: **at most 4 requests per day**; the adapter makes exactly one `GET` per `search()` call. Location filtering is done client-side against `candidate_required_location`; `"Worldwide"` / `"Anywhere"` / `"Global"` match any criteria.
+
+**The Muse** (`https://www.themuse.com/api/public/jobs`) — free public API; `THEMUSE_API_KEY` env var is optional but raises rate limits. Fetches `_MAX_PAGES=3` pages concurrently via `asyncio.gather`. Query matching and remote-only filtering are applied client-side after fetch.
+
+Both new adapters use `tenacity` for retry with exponential back-off, retrying only on 5xx/transport errors (not 4xx).
+
 Tests for adapters use recorded JSON fixtures in `tests/adapters/fixtures/` — never hit live boards in CI.
+
+### Filter feature
+
+`GET /jobs/filters?search_job_id=...` returns `{ sources, companies }` (distinct sorted values from a search's postings). `GET /jobs` accepts multi-value `source` and `company` params applied as SQL `IN` clauses.
+
+Multi-value query param patterns:
+- **FastAPI**: `source: list[str] | None = Query(default=None)` — natively accepts repeated `source=a&source=b`
+- **Frontend**: `URLSearchParams` with `.append()` to serialize `string[]` correctly (not `.set()`)
+
+**Router ordering**: define `GET /jobs/filters` **before** `GET /jobs/{job_id}` in the router — otherwise FastAPI tries to parse the literal string "filters" as a UUID and returns 422. This applies to any route with a named path that would otherwise be shadowed by a `/{uuid}` catch-all.
 
 ### Frontend data flow
 
 ```
-Zustand store (useJobSearchStore)  ← global UI state (active IDs, resumeUploaded)
+Zustand store (useJobSearchStore)  ← global UI state (active IDs, resumeUploaded, criteria/page)
 TanStack Query                     ← all server state / cache / polling
 
 Search: SearchForm → POST /search → store activeSearchJobId
         ResultsList polls GET /search/{id}/status every 2s (refetchInterval)
-        → when complete, fetches GET /jobs?search_job_id=...
+        → when complete, fetches GET /jobs?search_job_id=... and GET /jobs/filters
+
+Filter: ResultsFilterPanel (source pills + company checkboxes)
+        selectedSources / selectedCompanies in local React state — NOT URL-synced
+        resets to [] whenever activeSearchJobId changes
+        shown only when ≥2 distinct sources OR ≥1 company
 
 Apply:  JobCard → POST /jobs/{id}/prepare → store activeApplicationId
         ResumeEditor slide-over → DiffView + cover letter preview
         ApprovalScreen → ConfirmationModal → POST /applications/{id}/approve
 ```
 
-Filter state is synced to URL query params (`window.history.replaceState`) so searches survive refresh.
+`criteria.page` and search filters (query, remote_only) are synced to URL query params (`window.history.replaceState`) so searches survive refresh. Source/company filter state is local and intentionally ephemeral.
 
 ## Agents
 
