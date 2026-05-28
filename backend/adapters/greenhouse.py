@@ -44,6 +44,13 @@ def _infer_remote(location_name: str) -> RemoteStatus:
     return RemoteStatus.remote if "remote" in location_name.lower() else RemoteStatus.unspecified
 
 
+def _location_matches(posting_location: str | None, criteria_location: str) -> bool:
+    """Return True if the posting's location is within the searched location."""
+    if not posting_location:
+        return False
+    return criteria_location.lower() in posting_location.lower()
+
+
 def _matches_query(job: dict, query: str) -> bool:
     if not query.strip():
         return True
@@ -119,6 +126,12 @@ class GreenhouseAdapter(JobBoardAdapter):
             if posting is None:
                 continue
             if criteria.remote_only and posting.remote_status != RemoteStatus.remote:
+                continue
+            if (
+                criteria.location
+                and not criteria.remote_only
+                and not _location_matches(posting.location, criteria.location)
+            ):
                 continue
             postings.append(posting)
         return postings

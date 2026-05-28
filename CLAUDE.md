@@ -103,6 +103,14 @@ Every board adapter in `backend/adapters/` implements `JobBoardAdapter` (ABC in 
 
 **Greenhouse and Lever** use free public unauthenticated APIs — no API keys needed. Configured via `GREENHOUSE_COMPANIES` / `LEVER_COMPANIES` (comma-separated company slugs). Client-side query filtering uses **whole-word regex** (`\b` boundaries) so short terms like `"ai"` don't match substrings inside unrelated words (`"available"`, `"training"`).
 
+**Adzuna pagination note** *(future refactor candidate)*: `criteria.page` is passed directly into the Adzuna URL, so each `search()` call fetches exactly one page (20 results). All other adapters ignore `criteria.page` and return their full result set in one call. This means paging only produces new results from Adzuna; the other boards return the same results on every page, which `_deduplicate()` silently discards. Fix options: (a) have Adzuna loop internally over N pages like the other adapters, or (b) explicitly document `criteria.page` as an Adzuna-only hint in the adapter contract.
+
+**Remotive** (`https://remotive.com/api/remote-jobs`) — free public API, no auth. Every listing is remote by definition. Hard rate limit: **at most 4 requests per day**; the adapter makes exactly one `GET` per `search()` call. Location filtering is done client-side against `candidate_required_location`; `"Worldwide"` / `"Anywhere"` / `"Global"` match any criteria.
+
+**The Muse** (`https://www.themuse.com/api/public/jobs`) — free public API; `THEMUSE_API_KEY` env var is optional but raises rate limits. Fetches `_MAX_PAGES=3` pages concurrently via `asyncio.gather`. Query matching and remote-only filtering are applied client-side after fetch.
+
+Both new adapters use `tenacity` for retry with exponential back-off, retrying only on 5xx/transport errors (not 4xx).
+
 Tests for adapters use recorded JSON fixtures in `tests/adapters/fixtures/` — never hit live boards in CI.
 
 ### Filter feature

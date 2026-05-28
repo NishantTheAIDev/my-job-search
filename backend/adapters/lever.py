@@ -46,6 +46,13 @@ def _parse_ms_timestamp(ms: int | None) -> str | None:
         return None
 
 
+def _location_matches(posting_location: str | None, criteria_location: str) -> bool:
+    """Return True if the posting's location is within the searched location."""
+    if not posting_location:
+        return False
+    return criteria_location.lower() in posting_location.lower()
+
+
 def _matches_query(title: str, description: str, query: str) -> bool:
     if not query.strip():
         return True
@@ -119,6 +126,12 @@ class LeverAdapter(JobBoardAdapter):
             if not _matches_query(posting.title, posting.description, criteria.query):
                 continue
             if criteria.remote_only and posting.remote_status != RemoteStatus.remote:
+                continue
+            if (
+                criteria.location
+                and not criteria.remote_only
+                and not _location_matches(posting.location, criteria.location)
+            ):
                 continue
             postings.append(posting)
         return postings

@@ -48,6 +48,12 @@ def _infer_remote(locations: list[dict]) -> RemoteStatus:
     return RemoteStatus.unspecified
 
 
+def _location_matches(locations: list[dict], criteria_location: str) -> bool:
+    """Return True if any of the posting's locations contain the searched location."""
+    crit = criteria_location.lower()
+    return any(crit in (loc.get("name") or "").lower() for loc in locations)
+
+
 def _matches_query(title: str, description: str, query: str) -> bool:
     if not query.strip():
         return True
@@ -95,6 +101,8 @@ class TheMuseAdapter(JobBoardAdapter):
         base_params: dict = {}
         if settings.themuse_api_key:
             base_params["api_key"] = settings.themuse_api_key
+        if criteria.location and not criteria.remote_only:
+            base_params["location"] = criteria.location
 
         pages = await asyncio.gather(
             *[self._fetch_page({**base_params, "page": p}) for p in range(_MAX_PAGES)],
@@ -122,6 +130,10 @@ class TheMuseAdapter(JobBoardAdapter):
                     continue
                 if criteria.remote_only and posting.remote_status != RemoteStatus.remote:
                     continue
+                if criteria.location and not criteria.remote_only:
+                    locations = item.get("locations") or []
+                    if not _location_matches(locations, criteria.location):
+                        continue
                 postings.append(posting)
 
         logger.info("themuse: query=%r → %d results", criteria.query, len(postings))

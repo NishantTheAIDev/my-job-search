@@ -4,12 +4,14 @@ from backend.adapters.adzuna import AdzunaAdapter
 from backend.adapters.base import JobBoardAdapter
 from backend.adapters.greenhouse import GreenhouseAdapter
 from backend.adapters.lever import LeverAdapter
+from backend.adapters.remotive import RemotiveAdapter
 from backend.adapters.themuse import TheMuseAdapter
 
 ADAPTERS: dict[str, type[JobBoardAdapter]] = {
     "adzuna": AdzunaAdapter,
     "greenhouse": GreenhouseAdapter,
     "lever": LeverAdapter,
+    "remotive": RemotiveAdapter,
     "themuse": TheMuseAdapter,
 }
 
