@@ -25,6 +25,19 @@ _GRAPHQL_URL = "https://apis.indeed.com/graphql"
 _MAX_PAGES = 3
 _PAGE_DELAY = (2.0, 4.0)
 
+_INDIA_LOCATION_KEYWORDS = ("india",)
+
+
+def _job_url(job_key: str, location: str | None) -> str:
+    """Return the correct Indeed job URL for the given location.
+
+    India's web frontend uses a different subdomain and query parameter
+    (vjk= on in.indeed.com) than the US site (jk= on www.indeed.com).
+    """
+    if _is_india(location):
+        return f"https://in.indeed.com/?vjk={job_key}"
+    return f"https://www.indeed.com/viewjob?jk={job_key}"
+
 _HEADERS = {
     "Host": "apis.indeed.com",
     "content-type": "application/json",
@@ -125,14 +138,19 @@ def _format_compensation(comp: dict | None) -> str | None:
     return None
 
 
+def _is_india(location: str | None) -> bool:
+    return bool(location and any(kw in location.lower() for kw in _INDIA_LOCATION_KEYWORDS))
+
+
 class IndeedAdapter(JobBoardAdapter):
     source = "indeed"
 
     def _build_query(self, criteria: SearchCriteria, cursor: str | None) -> str:
         what = f'what: "{criteria.query}"' if criteria.query else ""
+        radius_unit = "KILOMETERS" if _is_india(criteria.location) else "MILES"
 
         if criteria.location and not criteria.remote_only:
-            location = f'location: {{where: "{criteria.location}", radius: 50, radiusUnit: MILES}}'
+            location = f'location: {{where: "{criteria.location}", radius: 50, radiusUnit: {radius_unit}}}'
         else:
             location = ""
 
@@ -166,7 +184,7 @@ class IndeedAdapter(JobBoardAdapter):
             resp.raise_for_status()
             return resp.json()
 
-    def _normalize(self, result: dict) -> JobPosting | None:
+    def _normalize(self, result: dict, search_location: str | None = None) -> JobPosting | None:
         try:
             job = result["job"]
             job_key = job["key"]
@@ -189,7 +207,7 @@ class IndeedAdapter(JobBoardAdapter):
             attributes = job.get("attributes") or []
             remote_status = _infer_remote(loc_long, attributes)
 
-            url = f"https://www.indeed.com/viewjob?jk={job_key}"
+            url = _job_url(job_key, search_location)
 
             desc_html = (job.get("description") or {}).get("html") or ""
             description = _strip_html(desc_html)
@@ -238,7 +256,7 @@ class IndeedAdapter(JobBoardAdapter):
             cursor = (job_search.get("pageInfo") or {}).get("nextCursor")
 
             for result in self._safe_iter(results):
-                posting = self._normalize(result)
+                posting = self._normalize(result, criteria.location)
                 if posting is None or posting.source_job_id in seen_ids:
                     continue
                 seen_ids.add(posting.source_job_id)

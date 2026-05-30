@@ -111,8 +111,6 @@ Every board adapter in `backend/adapters/` implements `JobBoardAdapter` (ABC in 
 
 **Indeed** — GraphQL POST to `https://apis.indeed.com/graphql` with a hardcoded API key; cursor-based pagination via `nextCursor`.
 
-**Google Jobs** — two-step HTML scrape: initial GET with `ibp=htl;jobs` extracts `application/ld+json` JobPosting structured data (primary) or the internal `520084652` JSON key (fallback); subsequent pages via `_CALLBACK_URL` with pagination cursor.
-
 **LinkedIn** — public guest search HTML (`/jobs-guest/jobs/api/seeMoreJobPostings/search`), no auth. Paginated with `start` offset; remote filter via `f_WT=2`; small async delays between pages to stay within rate tolerance.
 
 All adapters use `tenacity` for retry with exponential back-off, retrying only on 5xx/transport errors (not 4xx).
@@ -172,7 +170,7 @@ Route work to the right agent:
 
 4. **File upload safety**: Resume upload enforces an extension allowlist (`.pdf`, `.docx`, `.txt`) and a 5 MB size cap before reading content. Violations return HTTP 415 / 413 respectively.
 
-5. **Board compliance**: Adzuna uses its free official API. Greenhouse and Lever use their free public board APIs (no auth). LinkedIn uses the public guest search endpoint (no auth, HTML-parsed with `beautifulsoup4`). Remotive, The Muse, and Google Jobs use their free public APIs. Indeed uses a public GraphQL endpoint with a hardcoded API key.
+5. **Board compliance**: Adzuna uses its free official API. Greenhouse and Lever use their free public board APIs (no auth). LinkedIn uses the public guest search endpoint (no auth, HTML-parsed with `beautifulsoup4`). Remotive and The Muse use their free public APIs. Indeed uses a public GraphQL endpoint with a hardcoded API key.
 
 ## Key conventions
 
