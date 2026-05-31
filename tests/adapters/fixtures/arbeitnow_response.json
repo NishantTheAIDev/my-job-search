@@ -1,0 +1,52 @@
+{
+  "data": [
+    {
+      "slug": "senior-python-engineer-techcorp-001",
+      "title": "Senior Python Engineer",
+      "company_name": "TechCorp",
+      "location": "Remote",
+      "remote": true,
+      "tags": ["python", "fastapi", "remote"],
+      "url": "https://www.arbeitnow.com/jobs/techcorp/senior-python-engineer-001",
+      "description": "<p>We are looking for a <strong>Senior Python Engineer</strong> to build <em>FastAPI</em> services.</p>",
+      "salary": "$120,000 - $160,000",
+      "created_at": 1714521600
+    },
+    {
+      "slug": "frontend-developer-acme-002",
+      "title": "Frontend Developer",
+      "company_name": "Acme Corp",
+      "location": "Berlin, Germany",
+      "remote": false,
+      "tags": ["javascript", "react"],
+      "url": "https://www.arbeitnow.com/jobs/acme/frontend-developer-002",
+      "description": "<p>Join our <strong>frontend</strong> team in Berlin.</p>",
+      "salary": null,
+      "created_at": 1714435200
+    },
+    {
+      "slug": "data-engineer-dataflow-003",
+      "title": "Data Engineer",
+      "company_name": "DataFlow GmbH",
+      "location": "Munich, Germany",
+      "remote": false,
+      "tags": ["python", "spark", "data"],
+      "url": "https://www.arbeitnow.com/jobs/dataflow/data-engineer-003",
+      "description": "<p>Build <em>data pipelines</em> with Python and Spark.</p>",
+      "salary": "€60,000 - €80,000",
+      "created_at": 1714348800
+    }
+  ],
+  "links": {
+    "first": "https://www.arbeitnow.com/api/job-board-api?page=1",
+    "last": "https://www.arbeitnow.com/api/job-board-api?page=50",
+    "prev": null,
+    "next": "https://www.arbeitnow.com/api/job-board-api?page=2"
+  },
+  "meta": {
+    "current_page": 1,
+    "last_page": 50,
+    "per_page": 10,
+    "total": 500
+  }
+}
