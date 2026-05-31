@@ -4,6 +4,7 @@ from backend.adapters.adzuna import AdzunaAdapter
 from backend.adapters.base import JobBoardAdapter
 from backend.adapters.greenhouse import GreenhouseAdapter
 from backend.adapters.indeed import IndeedAdapter
+from backend.adapters.jsearch import JSearchAdapter
 from backend.adapters.lever import LeverAdapter
 from backend.adapters.linkedin import LinkedInAdapter
 from backend.adapters.remotive import RemotiveAdapter
@@ -13,6 +14,7 @@ ADAPTERS: dict[str, type[JobBoardAdapter]] = {
     "adzuna": AdzunaAdapter,
     "greenhouse": GreenhouseAdapter,
     "indeed": IndeedAdapter,
+    "jsearch": JSearchAdapter,
     "lever": LeverAdapter,
     "linkedin": LinkedInAdapter,
     "remotive": RemotiveAdapter,

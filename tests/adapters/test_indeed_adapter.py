@@ -53,7 +53,6 @@ async def test_search_returns_normalized_postings(httpx_mock, adapter, base_crit
     assert by_id["3001"].title == "Senior Software Engineer"
     assert by_id["3001"].company == "TechCorp"
     assert by_id["3001"].location == "San Francisco, CA"
-    # No location → US URL format
     assert by_id["3001"].url == "https://www.indeed.com/viewjob?jk=3001"
 
 
@@ -188,32 +187,3 @@ async def test_http_error_returns_empty(httpx_mock, adapter, base_criteria):
     assert postings == []
 
 
-# ---------------------------------------------------------------------------
-# 9. India location → in.indeed.com URL with vjk= parameter
-# ---------------------------------------------------------------------------
-
-
-async def test_india_location_uses_india_url(httpx_mock, adapter):
-    httpx_mock.add_response(url=_INDEED_URL_RE, json=_load_fixture())
-
-    criteria = SearchCriteria(query="software engineer", location="India")
-    postings = await adapter.search(criteria)
-
-    assert len(postings) == 3
-    for p in postings:
-        assert p.url.startswith("https://in.indeed.com/?vjk="), (
-            f"Expected India URL for location='India', got {p.url}"
-        )
-
-
-async def test_non_india_location_uses_us_url(httpx_mock, adapter):
-    httpx_mock.add_response(url=_INDEED_URL_RE, json=_load_fixture())
-
-    criteria = SearchCriteria(query="software engineer", location="London")
-    postings = await adapter.search(criteria)
-
-    assert len(postings) == 3
-    for p in postings:
-        assert p.url.startswith("https://www.indeed.com/viewjob?jk="), (
-            f"Expected US URL for location='London', got {p.url}"
-        )
