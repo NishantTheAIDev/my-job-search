@@ -4,9 +4,12 @@ This file provides guidance to Claude Code (claude.ai/code) when working with co
 
 ## Project overview
 
-An AI-powered job search and application assistant. Searches Adzuna (+ Greenhouse/Lever company boards), scores listings against the candidate's resume via Claude, tailors the resume and drafts cover letters, then submits — but **only after explicit user approval** (a hard invariant enforced at the service layer, not just the UI).
+An AI-powered job search and application assistant. Fans out across multiple job boards (Adzuna, JSearch, LinkedIn, Indeed, Remotive, The Muse, Greenhouse, Lever), scores listings against the candidate's resume via Claude, tailors the resume and drafts cover letters, then submits — but **only after explicit user approval** (a hard invariant enforced at the service layer, not just the UI).
 
 **Stack**: Python 3.14 / FastAPI / SQLModel (SQLite) / Anthropic SDK — managed with `uv`. React 19 / TypeScript / Vite / Tailwind CSS 4 / TanStack Query / Zustand frontend.
+
+## Guidelines
+- Plan before implementing anything, if unsure ask followup questions.
 
 ## Commands
 
@@ -56,6 +59,12 @@ POST /applications/{id}/approve   ← ONLY submission path
       asserts status == pending (raises InvalidStateError → 409 otherwise)
       calls submission_service.submit()  ← imported inside function body (makes call site explicit)
       writes Application(status=submitted) + AuditLog in ONE session.commit()
+
+GET /applications/{id}/resume.docx
+  → exports router (backend/routers/exports.py)
+  → reads Application.tailored_resume_text
+  → converts plain text to .docx via python-docx (heading heuristics: all-caps ≤40 chars, or ends with colon)
+  → streams as attachment; filename is sanitized from company + job title
 ```
 
 ### Background task session lifecycle
@@ -109,9 +118,15 @@ Every board adapter in `backend/adapters/` implements `JobBoardAdapter` (ABC in 
 
 **The Muse** (`https://www.themuse.com/api/public/jobs`) — free public API; `THEMUSE_API_KEY` env var is optional but raises rate limits. Fetches `_MAX_PAGES=3` pages concurrently via `asyncio.gather`. Query matching and remote-only filtering are applied client-side after fetch.
 
-Both new adapters use `tenacity` for retry with exponential back-off, retrying only on 5xx/transport errors (not 4xx).
+**JSearch** (`https://jsearch.p.rapidapi.com/search-v2`) — RapidAPI aggregator (LinkedIn, Indeed, Glassdoor, and more); `JSEARCH_API_KEY` env var required. Fetches `_NUM_PAGES=3` pages per call. Location is appended to the query string (`"<query> in <location>"`). Remote filter via `work_from_home=true` param plus a post-fetch guard. `posted_within_days` maps to JSearch's `date_posted` enum (`today`/`3days`/`week`/`month`/`all`).
 
-Tests for adapters use recorded JSON fixtures in `tests/adapters/fixtures/` — never hit live boards in CI.
+**Indeed** — GraphQL POST to `https://apis.indeed.com/graphql` with a hardcoded API key; cursor-based pagination via `nextCursor`.
+
+**LinkedIn** — public guest search HTML (`/jobs-guest/jobs/api/seeMoreJobPostings/search`), no auth. Paginated with `start` offset; remote filter via `f_WT=2`; small async delays between pages to stay within rate tolerance.
+
+All adapters use `tenacity` for retry with exponential back-off, retrying only on 5xx/transport errors (not 4xx).
+
+Tests for adapters use recorded JSON/HTML fixtures in `tests/adapters/fixtures/` — never hit live boards in CI.
 
 ### Filter feature
 
@@ -166,7 +181,7 @@ Route work to the right agent:
 
 4. **File upload safety**: Resume upload enforces an extension allowlist (`.pdf`, `.docx`, `.txt`) and a 5 MB size cap before reading content. Violations return HTTP 415 / 413 respectively.
 
-5. **Board compliance**: Adzuna is the live adapter (free official API). Greenhouse and Lever use their free public board APIs (no auth). LinkedIn is not integrated — its ToS prohibits automated access.
+5. **Board compliance**: Adzuna uses its free official API. JSearch uses the official RapidAPI endpoint. Greenhouse and Lever use their free public board APIs (no auth). LinkedIn uses the public guest search endpoint (no auth, HTML-parsed with `beautifulsoup4`). Remotive and The Muse use their free public APIs. Indeed uses a public GraphQL endpoint with a hardcoded API key.
 
 ## Key conventions
 
