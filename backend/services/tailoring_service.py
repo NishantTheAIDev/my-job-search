@@ -5,7 +5,9 @@ import json
 import logging
 
 from backend.llm import client as llm
+from backend.llm.parsing import extract_json
 from backend.llm.prompts import tailor as tailor_prompts
+from backend.services import rendercv_service
 
 logger = logging.getLogger(__name__)
 
@@ -33,24 +35,33 @@ def _compute_diff_json(original: str, tailored: str) -> str:
     return json.dumps(hunks)
 
 
-async def tailor_resume(resume_text: str, parsed_jd: dict) -> tuple[str, str, str, list[str]]:
-    """Return (tailored_resume_text, change_summary, diff_json, gaps)."""
+async def tailor_resume(
+    resume_text: str,
+    parsed_jd: dict,
+) -> tuple[str, str, str, list[str], dict]:
+    """Return (tailored_resume_text, change_summary, diff_json, gaps, cv_dict).
+
+    ``cv_dict`` is the raw rendercv-compatible cv object returned by the LLM.
+    On parse failure the fallback returns the original text, empty summary/gaps,
+    a no-op diff, and an empty dict for cv_dict.
+    """
     parsed_jd_json = json.dumps(parsed_jd, indent=2)
     user = tailor_prompts.build_user_prompt(resume_text, parsed_jd_json)
     raw = await llm.call_claude(
         system=tailor_prompts.SYSTEM,
         user=user,
-        max_tokens=4096,
+        max_tokens=8192,
         cache_system=True,
     )
     try:
-        data = json.loads(raw)
-        tailored = str(data["tailored_resume"])
+        data = extract_json(raw)
+        cv_dict = dict(data["cv"])
+        tailored = rendercv_service.cv_to_text(cv_dict)
         summary = str(data.get("change_summary", ""))
         gaps = list(data.get("gaps", []))
         diff_json = _compute_diff_json(resume_text, tailored)
-        return tailored, summary, diff_json, gaps
+        return tailored, summary, diff_json, gaps, cv_dict
     except (json.JSONDecodeError, KeyError) as exc:
         logger.warning("tailor: failed to parse LLM response: %s", exc)
         diff_json = _compute_diff_json(resume_text, resume_text)
-        return resume_text, "", diff_json, []
+        return resume_text, "", diff_json, [], {}

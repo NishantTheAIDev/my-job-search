@@ -5,16 +5,20 @@ import logging
 import uuid
 from datetime import UTC, datetime
 
+import yaml
 from sqlmodel import Session, select
 
+from backend.config import settings
 from backend.llm import client as llm
+from backend.llm.parsing import extract_json
 from backend.llm.prompts import jd_parser as jd_parser_prompts
+from backend.llm.prompts import reviser as reviser_prompts
 from backend.llm.sanitize import sanitize_jd_text
 from backend.models.application import Application, ApplicationStatus
 from backend.models.audit_log import AuditLog
 from backend.models.job_posting import JobPosting
 from backend.models.resume import Resume
-from backend.services import drafting_service, scoring_service, tailoring_service
+from backend.services import drafting_service, rendercv_service, scoring_service, tailoring_service
 
 logger = logging.getLogger(__name__)
 
@@ -36,6 +40,34 @@ PREP_STAGE_TAILORING = "tailoring"
 PREP_STAGE_DRAFTING = "drafting"
 
 
+def _parse_llm_json(raw: str, what: str) -> dict:
+    """Parse a structured LLM response, raising a user-facing error on failure.
+
+    Used by the interactive revise/edit paths so a malformed model response
+    surfaces as a clean, retryable message instead of a 500.
+    """
+    try:
+        return extract_json(raw)
+    except json.JSONDecodeError as exc:
+        logger.warning("%s: failed to parse LLM response: %s", what, exc)
+        raise ApplicationError(
+            f"The AI response for {what} was malformed — please try again."
+        ) from exc
+
+
+def _resume_diff_baseline(app: Application, session: Session) -> str:
+    """Text the resume diff is computed against — always the ORIGINAL uploaded
+    resume, matching the initial tailoring diff.
+
+    Revising/editing must diff against the same baseline as the first tailoring
+    (the uploaded resume), not against the previous tailored version. Otherwise
+    each revise re-bases the diff and the "Resume Changes" view collapses to just
+    the last tiny delta, making it look like the requested change wasn't applied.
+    """
+    resume = session.get(Resume, app.resume_id)
+    return resume.text_content if resume else (app.tailored_resume_text or "")
+
+
 async def _parse_jd(description: str) -> dict:
     sanitized = sanitize_jd_text(description)
     user = jd_parser_prompts.build_user_prompt(sanitized)
@@ -45,10 +77,19 @@ async def _parse_jd(description: str) -> dict:
         max_tokens=1024,
     )
     try:
-        return json.loads(raw)
+        return extract_json(raw)
     except json.JSONDecodeError:
         logger.warning("jd_parser: failed to parse response, using empty dict")
         return {}
+
+
+def _contact_from_cv(cv: dict) -> dict:
+    """Extract contact fields from a cv dict for cover-letter YAML."""
+    return {
+        k: cv.get(k)
+        for k in ("name", "headline", "location", "email", "phone", "website", "social_networks")
+        if cv.get(k)
+    }
 
 
 async def prepare_application(
@@ -131,6 +172,7 @@ async def prepare_application(
             change_summary,
             diff_json,
             tailor_gaps,
+            cv_dict,
         ) = await tailoring_service.tailor_resume(resume.text_content, parsed_jd)
         tailoring_failed = tailored_text == resume.text_content and not change_summary
         logger.info(
@@ -144,15 +186,41 @@ async def prepare_application(
         app.tailored_resume_text = tailored_text
         app.resume_diff_json = diff_json
         app.tailoring_failed = tailoring_failed
+
+        # Build resume YAML from the structured cv dict (best-effort; don't fail pipeline).
+        try:
+            if cv_dict:
+                app.resume_data_yaml = rendercv_service.build_resume_yaml(
+                    cv_dict, settings.rendercv_theme
+                )
+        except Exception as yaml_exc:  # noqa: BLE001
+            logger.warning(
+                "prepare_application: job=%s failed to build resume YAML: %s", job_id, yaml_exc
+            )
+
         _advance(PREP_STAGE_DRAFTING)
 
-        cover_letter, review_notes = await drafting_service.draft_cover_letter(
+        cover_letter, review_notes, paragraphs = await drafting_service.draft_cover_letter(
             tailored_text,
             parsed_jd,
             posting.title,
             posting.company,
         )
         logger.info("prepare_application: job=%s cover letter drafted", job_id)
+
+        # Build cover-letter YAML (best-effort).
+        try:
+            if paragraphs:
+                contact = _contact_from_cv(cv_dict) if cv_dict else {}
+                app.cover_letter_data_yaml = rendercv_service.build_cover_letter_yaml(
+                    contact, paragraphs, settings.rendercv_theme
+                )
+        except Exception as yaml_exc:  # noqa: BLE001
+            logger.warning(
+                "prepare_application: job=%s failed to build cover-letter YAML: %s",
+                job_id,
+                yaml_exc,
+            )
 
         app.status = ApplicationStatus.pending
         app.prep_stage = ""
@@ -268,4 +336,183 @@ def reject_application(app_id: uuid.UUID, session: Session) -> Application:
         posting.title if posting else "unknown",
         posting.company if posting else None,
     )
+    return app
+
+
+async def revise_application(
+    app_id: uuid.UUID,
+    target: str,
+    instructions: str,
+    session: Session,
+) -> Application:
+    """LLM-revise the resume or cover letter given natural-language instructions.
+
+    Only allowed while status == pending. Does NOT call submission_service.
+    """
+    app = session.get(Application, app_id)
+    if not app:
+        raise ApplicationError(f"Application {app_id} not found")
+    if app.status != ApplicationStatus.pending:
+        raise InvalidStateError(
+            f"Cannot revise application in status '{app.status}' — must be 'pending'"
+        )
+
+    if target == "resume":
+        # Re-parse the stored YAML to get the current cv dict.
+        current_cv: dict = {}
+        if app.resume_data_yaml:
+            try:
+                doc = yaml.safe_load(app.resume_data_yaml)
+                current_cv = doc.get("cv", {}) if isinstance(doc, dict) else {}
+            except Exception as parse_exc:  # noqa: BLE001
+                logger.warning("revise_application: failed to parse resume YAML: %s", parse_exc)
+
+        current_cv_json = json.dumps(current_cv, indent=2)
+        user = reviser_prompts.build_revise_cv_user_prompt(current_cv_json, instructions)
+        raw = await llm.call_claude(
+            system=reviser_prompts.REVISE_CV_SYSTEM,
+            user=user,
+            max_tokens=8192,
+        )
+        data = _parse_llm_json(raw, "the resume revision")
+        new_cv: dict = dict(data["cv"])
+        new_text = rendercv_service.cv_to_text(new_cv)
+
+        # Diff against the original uploaded resume (same baseline as the initial
+        # tailoring) so the "Resume Changes" view stays cumulative and the revision
+        # is visible in full context rather than collapsing to the last delta.
+        from backend.services.tailoring_service import _compute_diff_json
+
+        baseline = _resume_diff_baseline(app, session)
+        app.resume_data_yaml = rendercv_service.build_resume_yaml(new_cv, settings.rendercv_theme)
+        app.tailored_resume_text = new_text
+        app.resume_diff_json = _compute_diff_json(baseline, new_text)
+
+    elif target == "cover_letter":
+        current_paragraphs: list[str] = []
+        if app.cover_letter_data_yaml:
+            try:
+                doc = yaml.safe_load(app.cover_letter_data_yaml)
+                if isinstance(doc, dict):
+                    sections = doc.get("cv", {}).get("sections", {})
+                    for v in sections.values():
+                        if isinstance(v, list):
+                            current_paragraphs = [str(p) for p in v]
+                            break
+            except Exception as parse_exc:  # noqa: BLE001
+                logger.warning(
+                    "revise_application: failed to parse cover-letter YAML: %s", parse_exc
+                )
+        if not current_paragraphs and app.cover_letter_text:
+            # Fall back to splitting stored text into paragraphs.
+            current_paragraphs = [
+                p.strip() for p in app.cover_letter_text.split("\n\n") if p.strip()
+            ]
+
+        current_para_json = json.dumps(current_paragraphs, indent=2)
+        user = reviser_prompts.build_revise_cover_letter_user_prompt(
+            current_para_json, instructions
+        )
+        raw = await llm.call_claude(
+            system=reviser_prompts.REVISE_COVER_LETTER_SYSTEM,
+            user=user,
+            max_tokens=2048,
+        )
+        data = _parse_llm_json(raw, "the cover letter revision")
+        new_paragraphs: list[str] = [str(p) for p in data["cover_letter"]["paragraphs"]]
+        new_text = "\n\n".join(new_paragraphs)
+
+        # Rebuild cover-letter YAML; contact comes from the resume YAML if available.
+        contact: dict = {}
+        if app.resume_data_yaml:
+            try:
+                doc = yaml.safe_load(app.resume_data_yaml)
+                cv_doc = doc.get("cv", {}) if isinstance(doc, dict) else {}
+                contact = _contact_from_cv(cv_doc)
+            except Exception:  # noqa: BLE001
+                pass
+
+        app.cover_letter_data_yaml = rendercv_service.build_cover_letter_yaml(
+            contact, new_paragraphs, settings.rendercv_theme
+        )
+        app.cover_letter_text = new_text
+
+    else:
+        raise ApplicationError(f"Unknown target '{target}' — must be 'resume' or 'cover_letter'")
+
+    session.add(app)
+    session.commit()
+    session.refresh(app)
+    logger.info("revise_application: id=%s target=%s revised", app_id, target)
+    return app
+
+
+async def edit_application_content(
+    app_id: uuid.UUID,
+    target: str,
+    text: str,
+    session: Session,
+) -> Application:
+    """Accept free-text edits, re-structure into rendercv format, rebuild YAML + diff.
+
+    Only allowed while status == pending. Does NOT call submission_service.
+    """
+    app = session.get(Application, app_id)
+    if not app:
+        raise ApplicationError(f"Application {app_id} not found")
+    if app.status != ApplicationStatus.pending:
+        raise InvalidStateError(
+            f"Cannot edit application in status '{app.status}' — must be 'pending'"
+        )
+
+    if target == "resume":
+        user = reviser_prompts.build_structure_cv_user_prompt(text)
+        raw = await llm.call_claude(
+            system=reviser_prompts.STRUCTURE_CV_SYSTEM,
+            user=user,
+            max_tokens=8192,
+        )
+        data = _parse_llm_json(raw, "the edited resume")
+        new_cv: dict = dict(data["cv"])
+        new_text = rendercv_service.cv_to_text(new_cv)
+
+        from backend.services.tailoring_service import _compute_diff_json
+
+        baseline = _resume_diff_baseline(app, session)
+        app.resume_data_yaml = rendercv_service.build_resume_yaml(new_cv, settings.rendercv_theme)
+        app.tailored_resume_text = new_text
+        app.resume_diff_json = _compute_diff_json(baseline, new_text)
+
+    elif target == "cover_letter":
+        user = reviser_prompts.build_structure_cover_letter_user_prompt(text)
+        raw = await llm.call_claude(
+            system=reviser_prompts.STRUCTURE_COVER_LETTER_SYSTEM,
+            user=user,
+            max_tokens=2048,
+        )
+        data = _parse_llm_json(raw, "the edited cover letter")
+        new_paragraphs: list[str] = [str(p) for p in data["cover_letter"]["paragraphs"]]
+        new_text = "\n\n".join(new_paragraphs)
+
+        contact: dict = {}
+        if app.resume_data_yaml:
+            try:
+                doc = yaml.safe_load(app.resume_data_yaml)
+                cv_doc = doc.get("cv", {}) if isinstance(doc, dict) else {}
+                contact = _contact_from_cv(cv_doc)
+            except Exception:  # noqa: BLE001
+                pass
+
+        app.cover_letter_data_yaml = rendercv_service.build_cover_letter_yaml(
+            contact, new_paragraphs, settings.rendercv_theme
+        )
+        app.cover_letter_text = new_text
+
+    else:
+        raise ApplicationError(f"Unknown target '{target}' — must be 'resume' or 'cover_letter'")
+
+    session.add(app)
+    session.commit()
+    session.refresh(app)
+    logger.info("edit_application_content: id=%s target=%s updated", app_id, target)
     return app

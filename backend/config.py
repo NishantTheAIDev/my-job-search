@@ -17,6 +17,7 @@ class Settings(BaseSettings):
     log_level: str = "INFO"
     # Comma-separated list of allowed CORS origins
     cors_origins: list[str] = ["http://localhost:5173"]
+    rendercv_theme: str = "engineeringresumes"
 
 
 settings = Settings()

@@ -5,6 +5,8 @@ import {
   approveApplication,
   getResumeDownloadUrl,
   getCoverLetterDownloadUrl,
+  RENDERCV_THEMES,
+  DEFAULT_RENDERCV_THEME,
   PREPARE_POLL_MAX_RETRIES,
 } from '../../api/applications'
 import { getJob } from '../../api/jobs'
@@ -226,7 +228,11 @@ export function ApprovalScreen() {
               action={
                 <DownloadMenu
                   label="Download resume"
-                  urlFor={(format) => getResumeDownloadUrl(application.id, format)}
+                  themes={RENDERCV_THEMES}
+                  defaultTheme={DEFAULT_RENDERCV_THEME}
+                  urlFor={(format, theme) =>
+                    getResumeDownloadUrl(application.id, format, theme)
+                  }
                 />
               }
             >

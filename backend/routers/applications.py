@@ -1,9 +1,10 @@
 """Application management endpoints."""
 
 import uuid
+from typing import Literal
 
 from fastapi import APIRouter, Depends, HTTPException, Request
-from pydantic import BaseModel
+from pydantic import BaseModel, Field
 from sqlmodel import Session, select
 
 from backend.database import get_session
@@ -13,7 +14,9 @@ from backend.services.application_service import (
     ApplicationError,
     InvalidStateError,
     approve_application,
+    edit_application_content,
     reject_application,
+    revise_application,
 )
 
 router = APIRouter()
@@ -30,6 +33,8 @@ class ApplicationResponse(BaseModel):
     tailored_resume_text: str
     resume_diff_json: str
     cover_letter_text: str
+    resume_data_yaml: str
+    cover_letter_data_yaml: str
     tailoring_failed: bool
     created_at: str
     approved_at: str | None
@@ -49,6 +54,8 @@ def _to_response(app: Application) -> ApplicationResponse:
         tailored_resume_text=app.tailored_resume_text,
         resume_diff_json=app.resume_diff_json,
         cover_letter_text=app.cover_letter_text,
+        resume_data_yaml=app.resume_data_yaml,
+        cover_letter_data_yaml=app.cover_letter_data_yaml,
         tailoring_failed=app.tailoring_failed,
         created_at=app.created_at.isoformat(),
         approved_at=app.approved_at.isoformat() if app.approved_at else None,
@@ -112,6 +119,54 @@ def approve(request: Request, app_id: uuid.UUID, session: Session = Depends(get_
 def reject(app_id: uuid.UUID, session: Session = Depends(get_session)):
     try:
         app = reject_application(app_id, session)
+        return _to_response(app)
+    except InvalidStateError as exc:
+        raise HTTPException(status_code=409, detail=str(exc)) from exc
+    except ApplicationError as exc:
+        raise HTTPException(status_code=404, detail=str(exc)) from exc
+
+
+# Length caps bound LLM token cost per request (the rate limit alone does not cap
+# payload size). Instructions are short directives; edited text is a full document.
+class ReviseRequest(BaseModel):
+    target: Literal["resume", "cover_letter"]
+    instructions: str = Field(min_length=1, max_length=4_000)
+
+
+class EditContentRequest(BaseModel):
+    target: Literal["resume", "cover_letter"]
+    text: str = Field(max_length=30_000)
+
+
+@router.post("/{app_id}/revise", response_model=ApplicationResponse)
+@limiter.limit("10/minute")
+async def revise(
+    request: Request,
+    app_id: uuid.UUID,
+    body: ReviseRequest,
+    session: Session = Depends(get_session),
+):
+    """LLM-revise resume or cover letter given natural-language instructions."""
+    try:
+        app = await revise_application(app_id, body.target, body.instructions, session)
+        return _to_response(app)
+    except InvalidStateError as exc:
+        raise HTTPException(status_code=409, detail=str(exc)) from exc
+    except ApplicationError as exc:
+        raise HTTPException(status_code=404, detail=str(exc)) from exc
+
+
+@router.put("/{app_id}/content", response_model=ApplicationResponse)
+@limiter.limit("10/minute")
+async def edit_content(
+    request: Request,
+    app_id: uuid.UUID,
+    body: EditContentRequest,
+    session: Session = Depends(get_session),
+):
+    """Accept free-text edits, re-structure, and rebuild YAML + diff."""
+    try:
+        app = await edit_application_content(app_id, body.target, body.text, session)
         return _to_response(app)
     except InvalidStateError as exc:
         raise HTTPException(status_code=409, detail=str(exc)) from exc

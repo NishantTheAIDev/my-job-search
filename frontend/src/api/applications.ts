@@ -32,10 +32,59 @@ export async function rejectApplication(id: string): Promise<ApplicationResponse
   return response.data
 }
 
+export type ReviseTarget = 'resume' | 'cover_letter'
+
+export async function reviseApplication(
+  id: string,
+  target: ReviseTarget,
+  instructions: string
+): Promise<ApplicationResponse> {
+  const response = await api.post<ApplicationResponse>(`/applications/${id}/revise`, {
+    target,
+    instructions,
+  })
+  return response.data
+}
+
+export async function editApplicationContent(
+  id: string,
+  target: ReviseTarget,
+  text: string
+): Promise<ApplicationResponse> {
+  const response = await api.put<ApplicationResponse>(`/applications/${id}/content`, {
+    target,
+    text,
+  })
+  return response.data
+}
+
 export type DownloadFormat = 'pdf' | 'docx'
 
-export function getResumeDownloadUrl(id: string, format: DownloadFormat): string {
-  return `/api/applications/${id}/resume.${format}`
+// RenderCV themes available for the tailored-resume PDF. Kept in sync with
+// RENDERCV_THEMES in backend/services/rendercv_service.py — the backend rejects
+// any value not in its allowlist.
+export const RENDERCV_THEMES: { value: string; label: string }[] = [
+  { value: 'engineeringresumes', label: 'Engineering Resumes' },
+  { value: 'engineeringclassic', label: 'Engineering Classic' },
+  { value: 'classic', label: 'Classic' },
+  { value: 'harvard', label: 'Harvard' },
+  { value: 'sb2nov', label: 'sb2nov' },
+  { value: 'moderncv', label: 'ModernCV' },
+  { value: 'ember', label: 'Ember' },
+  { value: 'ink', label: 'Ink' },
+  { value: 'opal', label: 'Opal' },
+]
+
+export const DEFAULT_RENDERCV_THEME = 'engineeringresumes'
+
+// Theme only affects the rendercv PDF; the .docx export is plain text.
+export function getResumeDownloadUrl(
+  id: string,
+  format: DownloadFormat,
+  theme?: string
+): string {
+  const url = `/api/applications/${id}/resume.${format}`
+  return format === 'pdf' && theme ? `${url}?theme=${encodeURIComponent(theme)}` : url
 }
 
 export function getCoverLetterDownloadUrl(id: string, format: DownloadFormat): string {
