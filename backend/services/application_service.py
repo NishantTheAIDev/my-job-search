@@ -348,6 +348,12 @@ async def revise_application(
     """LLM-revise the resume or cover letter given natural-language instructions.
 
     Only allowed while status == pending. Does NOT call submission_service.
+
+    Note: unlike search/prepare, this awaits the LLM call inline within the request
+    session rather than offloading to a background task. The request session stays
+    open for the full LLM round-trip. This is acceptable for SQLite (no connection
+    pool to exhaust) and keeps the revise/edit UX synchronous; revisit if migrating
+    to a pooled database.
     """
     app = session.get(Application, app_id)
     if not app:
@@ -381,12 +387,12 @@ async def revise_application(
         # Diff against the original uploaded resume (same baseline as the initial
         # tailoring) so the "Resume Changes" view stays cumulative and the revision
         # is visible in full context rather than collapsing to the last delta.
-        from backend.services.tailoring_service import _compute_diff_json
+        from backend.services.tailoring_service import compute_diff_json
 
         baseline = _resume_diff_baseline(app, session)
         app.resume_data_yaml = rendercv_service.build_resume_yaml(new_cv, settings.rendercv_theme)
         app.tailored_resume_text = new_text
-        app.resume_diff_json = _compute_diff_json(baseline, new_text)
+        app.resume_diff_json = compute_diff_json(baseline, new_text)
 
     elif target == "cover_letter":
         current_paragraphs: list[str] = []
@@ -476,12 +482,12 @@ async def edit_application_content(
         new_cv: dict = dict(data["cv"])
         new_text = rendercv_service.cv_to_text(new_cv)
 
-        from backend.services.tailoring_service import _compute_diff_json
+        from backend.services.tailoring_service import compute_diff_json
 
         baseline = _resume_diff_baseline(app, session)
         app.resume_data_yaml = rendercv_service.build_resume_yaml(new_cv, settings.rendercv_theme)
         app.tailored_resume_text = new_text
-        app.resume_diff_json = _compute_diff_json(baseline, new_text)
+        app.resume_diff_json = compute_diff_json(baseline, new_text)
 
     elif target == "cover_letter":
         user = reviser_prompts.build_structure_cover_letter_user_prompt(text)

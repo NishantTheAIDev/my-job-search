@@ -42,7 +42,7 @@ def _parse_ms_timestamp(ms: int | None) -> str | None:
         return None
     try:
         return datetime.fromtimestamp(ms / 1000, tz=UTC).strftime("%Y-%m-%d")
-    except ValueError, OSError:
+    except (ValueError, OSError):
         return None
 
 

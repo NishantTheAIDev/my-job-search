@@ -1,5 +1,5 @@
 import { useEffect, useRef, useState } from 'react'
-import { useMutation } from '@tanstack/react-query'
+import { useMutation, useQueryClient } from '@tanstack/react-query'
 import { uploadResume } from '../../api/resume'
 import { createSearch } from '../../api/search'
 import { useJobSearchStore } from '../../store/useJobSearchStore'
@@ -73,10 +73,10 @@ export function LeftSidebar({ filtersData }: LeftSidebarProps) {
   const setSelectedCompanies = useJobSearchStore((s) => s.setSelectedCompanies)
   const setSelectedJob = useJobSearchStore((s) => s.setSelectedJob)
 
+  const queryClient = useQueryClient()
   const [localQuery, setLocalQuery] = useState(criteria.query)
   const [uploadError, setUploadError] = useState<string | null>(null)
   const [selectedFile, setSelectedFile] = useState<File | null>(null)
-  const [isUploading, setIsUploading] = useState(false)
   const [companiesExpanded, setCompaniesExpanded] = useState(false)
   const debounceRef = useRef<ReturnType<typeof setTimeout> | null>(null)
 
@@ -112,18 +112,23 @@ export function LeftSidebar({ filtersData }: LeftSidebarProps) {
     searchMutation.mutate({ ...criteria, page: 1 })
   }
 
-  async function handleUpload() {
-    if (!selectedFile) { setUploadError('Please select a file first.'); return }
-    setIsUploading(true)
-    setUploadError(null)
-    try {
-      await uploadResume(selectedFile)
+  const uploadMutation = useMutation({
+    mutationFn: uploadResume,
+    onSuccess: () => {
       setResumeUploaded(true)
-    } catch {
+      setUploadError(null)
+      queryClient.invalidateQueries({ queryKey: ['resume'] })
+    },
+    onError: () => {
       setUploadError('Upload failed. Please check the file and try again.')
-    } finally {
-      setIsUploading(false)
-    }
+    },
+  })
+  const isUploading = uploadMutation.isPending
+
+  function handleUpload() {
+    if (!selectedFile) { setUploadError('Please select a file first.'); return }
+    setUploadError(null)
+    uploadMutation.mutate(selectedFile)
   }
 
   function toggleSource(source: string) {

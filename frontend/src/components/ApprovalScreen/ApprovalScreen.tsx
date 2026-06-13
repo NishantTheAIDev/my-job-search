@@ -177,6 +177,10 @@ export function ApprovalScreen() {
           <ErrorBanner message="Could not load application details." onRetry={() => appQuery.refetch()} />
         )}
 
+        {isReady && jobQuery.isError && (
+          <ErrorBanner message="Could not load the job details." onRetry={() => jobQuery.refetch()} />
+        )}
+
         {isPreparing && <PrepProgress stage={application?.prep_stage ?? ''} />}
 
         {prepFailed && (

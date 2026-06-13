@@ -12,6 +12,7 @@ class Settings(BaseSettings):
     lever_companies: str = ""
     themuse_api_key: str = ""  # optional — raises rate limits but not required
     jsearch_api_key: SecretStr = SecretStr("")
+    indeed_api_key: SecretStr = SecretStr("")
     database_url: str = "sqlite:///./data/jobsearch.db"
     resume_storage_dir: str = "./data/resumes"
     log_level: str = "INFO"

@@ -5,9 +5,11 @@ import re
 from pathlib import Path
 
 import pytest
+from pydantic import SecretStr
 
 import backend.adapters.indeed as indeed_module
 from backend.adapters.indeed import IndeedAdapter
+from backend.config import settings
 from backend.models.job_posting import RemoteStatus, SearchCriteria
 
 FIXTURES_DIR = Path(__file__).parent / "fixtures"
@@ -33,6 +35,12 @@ def base_criteria() -> SearchCriteria:
 def single_page(monkeypatch):
     """Restrict to one page in every test unless explicitly overridden."""
     monkeypatch.setattr(indeed_module, "_MAX_PAGES", 1)
+
+
+@pytest.fixture(autouse=True)
+def api_key(monkeypatch):
+    """Provide a dummy key so search() doesn't short-circuit."""
+    monkeypatch.setattr(settings, "indeed_api_key", SecretStr("test-key"))
 
 
 # ---------------------------------------------------------------------------

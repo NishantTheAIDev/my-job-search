@@ -88,7 +88,7 @@ describe('ApprovalScreen', () => {
     const user = userEvent.setup()
     // Approval takes a while
     mockApproveApplication.mockImplementation(
-      () => new Promise((resolve) => setTimeout(() => resolve({ ...sampleApplication, status: 'approved' as const }), 5000))
+      () => new Promise((resolve) => setTimeout(() => resolve({ ...sampleApplication, status: 'submitted' as const }), 5000))
     )
 
     render(<ApprovalScreen />, { wrapper })
@@ -104,7 +104,7 @@ describe('ApprovalScreen', () => {
 
   it('shows success message after approval', async () => {
     const user = userEvent.setup()
-    mockApproveApplication.mockResolvedValue({ ...sampleApplication, status: 'approved' as const })
+    mockApproveApplication.mockResolvedValue({ ...sampleApplication, status: 'submitted' as const })
 
     render(<ApprovalScreen />, { wrapper })
     await waitFor(() => screen.getByRole('button', { name: /approve & submit/i }))
