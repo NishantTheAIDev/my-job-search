@@ -5,8 +5,11 @@ Pages are fetched sequentially with a small random async delay to stay within
 LinkedIn's rate tolerance; _MAX_PAGES caps the total fetch depth per search.
 
 Descriptions are not populated at search time — each would require a separate
-page request. The url field points to the canonical job page; descriptions can
-be fetched on-demand if needed.
+page request, and fetching one per card (up to _MAX_PAGES × _RESULTS_PER_PAGE)
+would blow past LinkedIn's rate tolerance. Instead the description is fetched
+lazily via fetch_description() — only for a posting the user actually prepares —
+from the guest detail endpoint (_DETAIL_URL). The url field points to the
+canonical job page.
 
 Remote mapping: f_WT=2 sends the remote filter natively. Remote status is also
 inferred client-side from title and location text for listings that arrive
@@ -28,6 +31,7 @@ from backend.models.job_posting import JobPosting, RemoteStatus, SearchCriteria
 logger = logging.getLogger(__name__)
 
 _SEARCH_URL = "https://www.linkedin.com/jobs-guest/jobs/api/seeMoreJobPostings/search"
+_DETAIL_URL = "https://www.linkedin.com/jobs-guest/jobs/api/jobPosting"
 _RESULTS_PER_PAGE = 25
 _MAX_PAGES = 3
 _PAGE_DELAY = (2.0, 4.0)
@@ -82,6 +86,44 @@ class LinkedInAdapter(JobBoardAdapter):
             resp = await client.get(_SEARCH_URL, params=params)
             resp.raise_for_status()
             return resp.text
+
+    @retry(
+        retry=retry_if_exception(_is_retryable),
+        wait=wait_exponential(min=1, max=30),
+        stop=stop_after_attempt(3),
+    )
+    async def _fetch_detail(self, job_id: str) -> str:
+        async with httpx.AsyncClient(timeout=15.0, headers=_HEADERS) as client:
+            resp = await client.get(f"{_DETAIL_URL}/{job_id}")
+            resp.raise_for_status()
+            return resp.text
+
+    async def fetch_description(self, posting: JobPosting) -> str | None:
+        """Fetch the full description from the guest detail page. Never raises."""
+        job_id = posting.source_job_id
+        if not job_id:
+            return None
+
+        try:
+            html = await self._fetch_detail(job_id)
+        except Exception as exc:
+            cause = exc.last_attempt.exception() if isinstance(exc, RetryError) else exc
+            if isinstance(cause, httpx.HTTPStatusError):
+                logger.error("linkedin: detail HTTP %d for %s", cause.response.status_code, job_id)
+            else:
+                logger.error("linkedin: detail fetch failed for %s: %s", job_id, cause)
+            return None
+
+        soup = BeautifulSoup(html, "html.parser")
+        markup = soup.find("div", class_="show-more-less-html__markup") or soup.find(
+            "div", class_="description__text"
+        )
+        if markup is None:
+            logger.warning("linkedin: no description markup for %s", job_id)
+            return None
+
+        text = markup.get_text(separator="\n", strip=True)
+        return text or None
 
     def _normalize(self, card: Tag) -> JobPosting | None:
         try:

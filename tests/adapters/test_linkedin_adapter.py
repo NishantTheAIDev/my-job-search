@@ -9,17 +9,32 @@ import pytest
 
 import backend.adapters.linkedin as linkedin_module
 from backend.adapters.linkedin import LinkedInAdapter
-from backend.models.job_posting import RemoteStatus, SearchCriteria
+from backend.models.job_posting import JobPosting, RemoteStatus, SearchCriteria
 
 FIXTURES_DIR = Path(__file__).parent / "fixtures"
 
 _LINKEDIN_URL_RE = re.compile(
     r"https://www\.linkedin\.com/jobs-guest/jobs/api/seeMoreJobPostings/search"
 )
+_LINKEDIN_DETAIL_RE = re.compile(r"https://www\.linkedin\.com/jobs-guest/jobs/api/jobPosting/\d+")
 
 
 def _load_fixture() -> str:
     return (FIXTURES_DIR / "linkedin_response.html").read_text()
+
+
+def _load_detail_fixture() -> str:
+    return (FIXTURES_DIR / "linkedin_job_detail.html").read_text()
+
+
+def _detail_posting(job_id: str = "7001") -> JobPosting:
+    return JobPosting(
+        source="linkedin",
+        source_job_id=job_id,
+        title="Senior AI Engineer",
+        url=f"https://www.linkedin.com/jobs/view/{job_id}",
+        description="",
+    )
 
 
 @pytest.fixture
@@ -95,9 +110,9 @@ async def test_remote_status_inferred(httpx_mock, adapter, base_criteria):
     by_id = {p.source_job_id: p for p in postings}
 
     assert by_id["7001"].remote_status == RemoteStatus.unspecified  # "San Francisco, CA"
-    assert by_id["7002"].remote_status == RemoteStatus.remote        # location="Remote"
+    assert by_id["7002"].remote_status == RemoteStatus.remote  # location="Remote"
     assert by_id["7003"].remote_status == RemoteStatus.unspecified  # "New York, NY"
-    assert by_id["7004"].remote_status == RemoteStatus.remote        # title has "Work From Home"
+    assert by_id["7004"].remote_status == RemoteStatus.remote  # title has "Work From Home"
 
 
 # ---------------------------------------------------------------------------
@@ -128,8 +143,8 @@ async def test_date_parsed_from_both_time_classes(httpx_mock, adapter, base_crit
     postings = await adapter.search(base_criteria)
     by_id = {p.source_job_id: p for p in postings}
 
-    assert by_id["7001"].posted_date == "2024-05-01"   # listdate class
-    assert by_id["7002"].posted_date == "2024-05-10"   # listdate--new class
+    assert by_id["7001"].posted_date == "2024-05-01"  # listdate class
+    assert by_id["7002"].posted_date == "2024-05-10"  # listdate--new class
     assert by_id["7003"].posted_date == "2024-04-20"
     assert by_id["7004"].posted_date == "2024-05-05"
 
@@ -190,8 +205,8 @@ async def test_pagination_stops_when_no_cards(httpx_mock, adapter, monkeypatch):
     monkeypatch.setattr(linkedin_module, "_MAX_PAGES", 2)
     monkeypatch.setattr(asyncio, "sleep", AsyncMock())
 
-    httpx_mock.add_response(url=_LINKEDIN_URL_RE, text=_load_fixture())   # page 0: 4 cards
-    httpx_mock.add_response(url=_LINKEDIN_URL_RE, text="<html></html>")   # page 1: no cards
+    httpx_mock.add_response(url=_LINKEDIN_URL_RE, text=_load_fixture())  # page 0: 4 cards
+    httpx_mock.add_response(url=_LINKEDIN_URL_RE, text="<html></html>")  # page 1: no cards
 
     postings = await adapter.search(SearchCriteria(query="engineer"))
 
@@ -209,11 +224,82 @@ async def test_dedup_across_pages(httpx_mock, adapter, monkeypatch):
     monkeypatch.setattr(asyncio, "sleep", AsyncMock())
 
     fixture = _load_fixture()
-    httpx_mock.add_response(url=_LINKEDIN_URL_RE, text=fixture)   # page 0
-    httpx_mock.add_response(url=_LINKEDIN_URL_RE, text=fixture)   # page 1: same IDs
+    httpx_mock.add_response(url=_LINKEDIN_URL_RE, text=fixture)  # page 0
+    httpx_mock.add_response(url=_LINKEDIN_URL_RE, text=fixture)  # page 1: same IDs
 
     postings = await adapter.search(SearchCriteria(query=""))
 
     assert len(postings) == 4  # not 8
     source_ids = {p.source_job_id for p in postings}
     assert source_ids == {"7001", "7002", "7003", "7004"}
+
+
+# ---------------------------------------------------------------------------
+# 11. fetch_description: parses the detail page markup
+# ---------------------------------------------------------------------------
+
+
+async def test_fetch_description_parses_markup(httpx_mock, adapter):
+    httpx_mock.add_response(url=_LINKEDIN_DETAIL_RE, text=_load_detail_fixture())
+
+    text = await adapter.fetch_description(_detail_posting("7001"))
+
+    assert text is not None
+    assert "Senior AI Engineer" in text
+    assert "5+ years of Python experience" in text
+    assert "Nice to have:" in text
+    # tags stripped, list items separated by newlines
+    assert "<" not in text
+    assert "\n" in text
+
+    request = httpx_mock.get_requests()[0]
+    assert request.url.path.endswith("/jobPosting/7001")
+
+
+# ---------------------------------------------------------------------------
+# 12. fetch_description: falls back to description__text div
+# ---------------------------------------------------------------------------
+
+
+async def test_fetch_description_fallback_div(httpx_mock, adapter):
+    html = '<div class="description__text">Fallback body text</div>'
+    httpx_mock.add_response(url=_LINKEDIN_DETAIL_RE, text=html)
+
+    text = await adapter.fetch_description(_detail_posting("7002"))
+
+    assert text == "Fallback body text"
+
+
+# ---------------------------------------------------------------------------
+# 13. fetch_description: no description markup → None
+# ---------------------------------------------------------------------------
+
+
+async def test_fetch_description_missing_markup_returns_none(httpx_mock, adapter):
+    httpx_mock.add_response(url=_LINKEDIN_DETAIL_RE, text="<html><body>nope</body></html>")
+
+    assert await adapter.fetch_description(_detail_posting("7003")) is None
+
+
+# ---------------------------------------------------------------------------
+# 14. fetch_description: HTTP error → None (never raises)
+# ---------------------------------------------------------------------------
+
+
+async def test_fetch_description_http_error_returns_none(httpx_mock, adapter):
+    httpx_mock.add_response(url=_LINKEDIN_DETAIL_RE, status_code=404)
+
+    assert await adapter.fetch_description(_detail_posting("7004")) is None
+
+
+# ---------------------------------------------------------------------------
+# 15. fetch_description: missing source_job_id → None, no request made
+# ---------------------------------------------------------------------------
+
+
+async def test_fetch_description_no_job_id_returns_none(httpx_mock, adapter):
+    posting = _detail_posting("")
+    posting.source_job_id = ""
+
+    assert await adapter.fetch_description(posting) is None
+    assert httpx_mock.get_requests() == []
