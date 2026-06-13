@@ -27,6 +27,15 @@ class InvalidStateError(ApplicationError):
     pass
 
 
+# Pipeline stage markers persisted on Application.prep_stage while status == preparing,
+# so the UI can show real progress instead of inferring it from a timeout. The frontend
+# maps these keys to user-facing labels.
+PREP_STAGE_PARSING = "parsing"
+PREP_STAGE_SCORING = "scoring"
+PREP_STAGE_TAILORING = "tailoring"
+PREP_STAGE_DRAFTING = "drafting"
+
+
 async def _parse_jd(description: str) -> dict:
     sanitized = sanitize_jd_text(description)
     user = jd_parser_prompts.build_user_prompt(sanitized)
@@ -46,9 +55,17 @@ async def prepare_application(
     job_id: uuid.UUID,
     session: Session,
 ) -> Application:
-    """Run the full LLM pipeline and create a pending Application.
+    """Run the full LLM pipeline, surfacing progress on a persisted Application.
 
-    Steps: get active resume → get job posting → parse JD → score → tailor → draft → persist.
+    The Application row is created immediately in the ``preparing`` state and its
+    ``prep_stage`` is advanced (and committed) before each LLM call, so the client
+    can poll it for real-time progress. On success the row transitions to
+    ``pending``; on failure it transitions to ``prep_failed`` with ``prep_error``
+    set, so the UI detects failure immediately instead of inferring it from a
+    timeout.
+
+    Steps: get active resume → get job posting → create preparing row →
+    parse JD → score → tailor → draft → mark pending.
     """
     # Load the active resume
     resume = session.exec(
@@ -62,8 +79,30 @@ async def prepare_application(
     if not posting:
         raise ApplicationError(f"Job posting {job_id} not found")
 
-    # Run LLM pipeline
-    logger.info("prepare_application: job=%s starting pipeline (resume=%s)", job_id, resume.id)
+    # Create the row up front so the client's by-job poll resolves right away and
+    # can render progress rather than waiting out a blind timeout.
+    app = Application(
+        job_posting_id=posting.id,
+        resume_id=resume.id,
+        status=ApplicationStatus.preparing,
+        prep_stage=PREP_STAGE_PARSING,
+    )
+    session.add(app)
+    session.commit()
+    session.refresh(app)
+
+    logger.info(
+        "prepare_application: job=%s starting pipeline (resume=%s app=%s)",
+        job_id,
+        resume.id,
+        app.id,
+    )
+
+    def _advance(stage: str) -> None:
+        app.prep_stage = stage
+        session.add(app)
+        session.commit()
+
     try:
         parsed_jd = await _parse_jd(posting.description)
         logger.info(
@@ -72,6 +111,7 @@ async def prepare_application(
             list(parsed_jd.keys()),
         )
 
+        _advance(PREP_STAGE_SCORING)
         score, rationale, gaps = await scoring_service.score_resume(resume.text_content, parsed_jd)
         logger.info(
             "prepare_application: job=%s score=%d gaps=%d",
@@ -79,7 +119,13 @@ async def prepare_application(
             score,
             len(gaps),
         )
+        # Persist the score and propagate it to the posting as soon as we have it.
+        app.match_score = score
+        app.match_rationale = rationale
+        posting.match_score = score
+        session.add(posting)
 
+        _advance(PREP_STAGE_TAILORING)
         (
             tailored_text,
             change_summary,
@@ -93,6 +139,12 @@ async def prepare_application(
             tailoring_failed,
             len(tailor_gaps),
         )
+        # Persist the tailored resume now so it can be reviewed/downloaded while
+        # the cover letter is still drafting (status stays `preparing`).
+        app.tailored_resume_text = tailored_text
+        app.resume_diff_json = diff_json
+        app.tailoring_failed = tailoring_failed
+        _advance(PREP_STAGE_DRAFTING)
 
         cover_letter, review_notes = await drafting_service.draft_cover_letter(
             tailored_text,
@@ -102,36 +154,30 @@ async def prepare_application(
         )
         logger.info("prepare_application: job=%s cover letter drafted", job_id)
 
-        # Update match_score on the posting
-        posting.match_score = score
-        session.add(posting)
-
-        app = Application(
-            job_posting_id=posting.id,
-            resume_id=resume.id,
-            status=ApplicationStatus.pending,
-            tailored_resume_text=tailored_text,
-            resume_diff_json=diff_json,
-            cover_letter_text=cover_letter,
-            match_score=score,
-            match_rationale=rationale,
-            tailoring_failed=tailoring_failed,
-        )
+        app.status = ApplicationStatus.pending
+        app.prep_stage = ""
+        app.cover_letter_text = cover_letter
         session.add(app)
         session.commit()
         session.refresh(app)
         logger.info(
-            "prepare_application: job=%s application created id=%s status=%s",
+            "prepare_application: job=%s application ready id=%s status=%s",
             job_id,
             app.id,
             app.status,
         )
         return app
 
-    except ApplicationError:
-        raise
     except Exception as exc:
         logger.exception("prepare_application: job=%s pipeline failed: %s", job_id, exc)
+        # Mark the row failed so the client sees it immediately. Use a fresh
+        # rollback first in case the failing call left the session dirty.
+        session.rollback()
+        app.status = ApplicationStatus.prep_failed
+        app.prep_stage = ""
+        app.prep_error = str(exc)
+        session.add(app)
+        session.commit()
         raise ApplicationError(f"Pipeline failed: {exc}") from exc
 
 

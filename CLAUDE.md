@@ -4,7 +4,7 @@ This file provides guidance to Claude Code (claude.ai/code) when working with co
 
 ## Project overview
 
-An AI-powered job search and application assistant. Fans out across multiple job boards (Adzuna, JSearch, LinkedIn, Indeed, Remotive, The Muse, Greenhouse, Lever), scores listings against the candidate's resume via Claude, tailors the resume and drafts cover letters, then submits — but **only after explicit user approval** (a hard invariant enforced at the service layer, not just the UI).
+An AI-powered job search and application assistant. Fans out across multiple job boards (Adzuna, JSearch, LinkedIn, Indeed, Remotive, The Muse, Greenhouse, Lever, Arbeitnow, Jobicy, We Work Remotely), scores listings against the candidate's resume via Claude, tailors the resume and drafts cover letters, then submits — but **only after explicit user approval** (a hard invariant enforced at the service layer, not just the UI).
 
 **Stack**: Python 3.14 / FastAPI / SQLModel (SQLite) / Anthropic SDK — managed with `uv`. React 19 / TypeScript / Vite / Tailwind CSS 4 / TanStack Query / Zustand frontend.
 
@@ -60,11 +60,15 @@ POST /applications/{id}/approve   ← ONLY submission path
       calls submission_service.submit()  ← imported inside function body (makes call site explicit)
       writes Application(status=submitted) + AuditLog in ONE session.commit()
 
-GET /applications/{id}/resume.docx
+GET /applications/{id}/resume.docx        |  /resume.pdf
+GET /applications/{id}/cover-letter.docx  |  /cover-letter.pdf
   → exports router (backend/routers/exports.py)
-  → reads Application.tailored_resume_text
-  → converts plain text to .docx via python-docx (heading heuristics: all-caps ≤40 chars, or ends with colon)
+  → reads Application.tailored_resume_text / .cover_letter_text
+  → .docx: python-docx; .pdf: reportlab (single-column, Helvetica, ATS-safe)
+    (both share the same heading heuristics: all-caps ≤40 chars, or ends with colon)
   → streams as attachment; filename is sanitized from company + job title
+  → UI: shared DownloadMenu (one button, PDF/DOCX menu) — resume + cover letter
+    in the ResumeEditor header and the ApprovalScreen section headers
 ```
 
 ### Background task session lifecycle
@@ -112,6 +116,8 @@ Every board adapter in `backend/adapters/` implements `JobBoardAdapter` (ABC in 
 
 **Greenhouse and Lever** use free public unauthenticated APIs — no API keys needed. Configured via `GREENHOUSE_COMPANIES` / `LEVER_COMPANIES` (comma-separated company slugs). Client-side query filtering uses **whole-word regex** (`\b` boundaries) so short terms like `"ai"` don't match substrings inside unrelated words (`"available"`, `"training"`).
 
+**Job Type / Experience Level filters removed**: the Job Type (`employment_type`) and Experience Level (`seniority`) filters were removed from the frontend because adapter support was incomplete — only JSearch mapped `employment_type` and no adapter honored `seniority`, so the controls misled users. The controls, their URL-param sync, and the fields on the frontend `SearchCriteria` type are gone, so the client no longer sends these params. The backend `SearchCriteria` model still accepts them (harmlessly unused) and JSearch's `employment_type` mapping remains in place — so re-introducing the filters later means restoring the UI and, ideally, broader adapter support: either (a) post-fetch client-side filtering in `GET /jobs` using the `employment_type`/`seniority` fields stored on `JobPosting` rows, or (b) mapping the params in each adapter whose API supports them.
+
 **Adzuna pagination note** *(future refactor candidate)*: `criteria.page` is passed directly into the Adzuna URL, so each `search()` call fetches exactly one page (20 results). All other adapters ignore `criteria.page` and return their full result set in one call. This means paging only produces new results from Adzuna; the other boards return the same results on every page, which `_deduplicate()` silently discards. Fix options: (a) have Adzuna loop internally over N pages like the other adapters, or (b) explicitly document `criteria.page` as an Adzuna-only hint in the adapter contract.
 
 **Remotive** (`https://remotive.com/api/remote-jobs`) — free public API, no auth. Every listing is remote by definition. Hard rate limit: **at most 4 requests per day**; the adapter makes exactly one `GET` per `search()` call. Location filtering is done client-side against `candidate_required_location`; `"Worldwide"` / `"Anywhere"` / `"Global"` match any criteria.
@@ -123,6 +129,12 @@ Every board adapter in `backend/adapters/` implements `JobBoardAdapter` (ABC in 
 **Indeed** — GraphQL POST to `https://apis.indeed.com/graphql` with a hardcoded API key; cursor-based pagination via `nextCursor`.
 
 **LinkedIn** — public guest search HTML (`/jobs-guest/jobs/api/seeMoreJobPostings/search`), no auth. Paginated with `start` offset; remote filter via `f_WT=2`; small async delays between pages to stay within rate tolerance.
+
+**Arbeitnow** (`https://www.arbeitnow.com/api/job-board-api`) — free public API, no auth; EU/international listings. Fetches `_NUM_PAGES=3` pages concurrently. Remote detected via a boolean `remote` field per item; filtered client-side. Date is a Unix timestamp.
+
+**Jobicy** (`https://jobicy.com/api/v2/remote-jobs`) — free public API, no auth; remote-only. Single call returning up to 50 results. Location filtered client-side against `jobGeo`; `"Worldwide"`/`"Anywhere"`/`"Global"` match any criteria location. Salary built from `annualSalaryMin`/`annualSalaryMax`/`salaryCurrency` fields.
+
+**We Work Remotely** (`https://weworkremotely.com/remote-jobs.rss`) — public RSS feed, no auth; remote-only. Single fetch; XML parsed with `xml.etree.ElementTree`. Title format `"Company: Job Title"` is split on first `": "`. Source job ID is the last URL path segment. Date parsed from RFC 2822 via `email.utils.parsedate_to_datetime`.
 
 All adapters use `tenacity` for retry with exponential back-off, retrying only on 5xx/transport errors (not 4xx).
 
@@ -181,7 +193,7 @@ Route work to the right agent:
 
 4. **File upload safety**: Resume upload enforces an extension allowlist (`.pdf`, `.docx`, `.txt`) and a 5 MB size cap before reading content. Violations return HTTP 415 / 413 respectively.
 
-5. **Board compliance**: Adzuna uses its free official API. JSearch uses the official RapidAPI endpoint. Greenhouse and Lever use their free public board APIs (no auth). LinkedIn uses the public guest search endpoint (no auth, HTML-parsed with `beautifulsoup4`). Remotive and The Muse use their free public APIs. Indeed uses a public GraphQL endpoint with a hardcoded API key.
+5. **Board compliance**: Adzuna uses its free official API. JSearch uses the official RapidAPI endpoint. Greenhouse and Lever use their free public board APIs (no auth). LinkedIn uses the public guest search endpoint (no auth, HTML-parsed with `beautifulsoup4`). Remotive, The Muse, Arbeitnow, and Jobicy use their free public APIs. Indeed uses a public GraphQL endpoint with a hardcoded API key. We Work Remotely uses the public RSS feed (no auth).
 
 ## Key conventions
 

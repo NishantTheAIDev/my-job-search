@@ -10,7 +10,7 @@ import type { ApplicationResponse, JobPosting } from '../../types'
 vi.mock('../../api/applications')
 vi.mock('../../api/jobs')
 
-const mockGetApplication = vi.mocked(applicationsApi.getApplication)
+const mockGetApplicationByJob = vi.mocked(applicationsApi.getApplicationByJob)
 const mockApproveApplication = vi.mocked(applicationsApi.approveApplication)
 const mockGetJob = vi.mocked(jobsApi.getJob)
 
@@ -23,6 +23,8 @@ const sampleApplication: ApplicationResponse = {
   id: 'app-1',
   job_posting_id: 'job-1',
   status: 'pending',
+  prep_stage: '',
+  prep_error: '',
   match_score: 82,
   match_rationale: 'Strong React and TypeScript skills',
   tailored_resume_text: 'Tailored resume content here...',
@@ -43,6 +45,7 @@ const sampleJob: JobPosting = {
   location: 'San Francisco, CA',
   remote_status: 'remote',
   url: 'https://example.com',
+  description: 'We are looking for a Senior React Engineer.',
   compensation: null,
   posted_date: null,
   match_score: 82,
@@ -50,8 +53,8 @@ const sampleJob: JobPosting = {
 
 beforeEach(() => {
   vi.clearAllMocks()
-  useJobSearchStore.setState({ activeApplicationId: 'app-1', showApproval: true })
-  mockGetApplication.mockResolvedValue(sampleApplication)
+  useJobSearchStore.setState({ activeApplicationId: 'job-1', showApproval: true })
+  mockGetApplicationByJob.mockResolvedValue(sampleApplication)
   mockGetJob.mockResolvedValue(sampleJob)
 })
 

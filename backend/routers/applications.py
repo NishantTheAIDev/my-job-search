@@ -23,6 +23,8 @@ class ApplicationResponse(BaseModel):
     id: uuid.UUID
     job_posting_id: uuid.UUID
     status: ApplicationStatus
+    prep_stage: str
+    prep_error: str
     match_score: int
     match_rationale: str
     tailored_resume_text: str
@@ -40,6 +42,8 @@ def _to_response(app: Application) -> ApplicationResponse:
         id=app.id,
         job_posting_id=app.job_posting_id,
         status=app.status,
+        prep_stage=app.prep_stage,
+        prep_error=app.prep_error,
         match_score=app.match_score,
         match_rationale=app.match_rationale,
         tailored_resume_text=app.tailored_resume_text,
@@ -62,6 +66,26 @@ def list_applications(
     if status:
         query = query.where(Application.status == status)
     return [_to_response(a) for a in session.exec(query).all()]
+
+
+@router.get("/by-job/{job_posting_id}", response_model=ApplicationResponse)
+def get_application_by_job(job_posting_id: uuid.UUID, session: Session = Depends(get_session)):
+    """Resolve the most recent application for a job posting.
+
+    The prepare pipeline runs in the background and creates the Application row
+    only when it finishes, so the client polls this endpoint (keyed by the job
+    posting id it already has) until the row exists, then uses the returned
+    application id for approve/reject. Defined before ``/{app_id}`` so the
+    literal "by-job" segment is not parsed as a UUID.
+    """
+    app = session.exec(
+        select(Application)
+        .where(Application.job_posting_id == job_posting_id)
+        .order_by(Application.created_at.desc())
+    ).first()
+    if not app:
+        raise HTTPException(status_code=404, detail="Application not found")
+    return _to_response(app)
 
 
 @router.get("/{app_id}", response_model=ApplicationResponse)

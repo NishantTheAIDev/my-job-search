@@ -1,4 +1,4 @@
-"""Tests for the resume .docx export endpoint."""
+"""Tests for the resume export endpoints (.docx and .pdf)."""
 
 import uuid
 
@@ -38,6 +38,7 @@ def _create_test_application(session: Session) -> Application:
         resume_id=resume.id,
         status=ApplicationStatus.pending,
         tailored_resume_text="EXPERIENCE\n\nSoftware Engineer at Acme\n- Built APIs with FastAPI",
+        cover_letter_text="Dear Hiring Manager,\n\nI am excited to apply.",
     )
     session.add(app)
     session.commit()
@@ -74,3 +75,45 @@ def test_docx_is_valid_zip(client: TestClient, session: Session):
     assert response.status_code == 200
     # All .docx files are ZIP archives; magic bytes are PK\x03\x04
     assert response.content[:4] == b"PK\x03\x04"
+
+
+def test_download_resume_returns_pdf(client: TestClient, session: Session):
+    app = _create_test_application(session)
+    response = client.get(f"/applications/{app.id}/resume.pdf")
+    assert response.status_code == 200
+    assert response.headers["content-type"] == "application/pdf"
+    disposition = response.headers["content-disposition"]
+    assert ".pdf" in disposition
+    assert "Acme_Corp" in disposition
+    assert "Software_Engineer" in disposition
+    # PDF magic bytes
+    assert response.content[:4] == b"%PDF"
+
+
+def test_download_pdf_not_found(client: TestClient):
+    response = client.get(f"/applications/{uuid.uuid4()}/resume.pdf")
+    assert response.status_code == 404
+
+
+def test_download_cover_letter_docx(client: TestClient, session: Session):
+    app = _create_test_application(session)
+    response = client.get(f"/applications/{app.id}/cover-letter.docx")
+    assert response.status_code == 200
+    assert "wordprocessingml" in response.headers["content-type"]
+    disposition = response.headers["content-disposition"]
+    assert "CoverLetter_Acme_Corp_Software_Engineer.docx" in disposition
+    assert response.content[:4] == b"PK\x03\x04"
+
+
+def test_download_cover_letter_pdf(client: TestClient, session: Session):
+    app = _create_test_application(session)
+    response = client.get(f"/applications/{app.id}/cover-letter.pdf")
+    assert response.status_code == 200
+    assert response.headers["content-type"] == "application/pdf"
+    assert "CoverLetter_" in response.headers["content-disposition"]
+    assert response.content[:4] == b"%PDF"
+
+
+def test_download_cover_letter_not_found(client: TestClient):
+    response = client.get(f"/applications/{uuid.uuid4()}/cover-letter.pdf")
+    assert response.status_code == 404

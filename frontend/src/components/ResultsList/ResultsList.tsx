@@ -1,4 +1,4 @@
-import { useEffect, useRef, useState } from 'react'
+import { useEffect, useRef } from 'react'
 import { useQuery } from '@tanstack/react-query'
 import { getSearchStatus } from '../../api/search'
 import { listJobs, getJobFilters } from '../../api/jobs'
@@ -7,26 +7,75 @@ import { LoadingSpinner } from '../shared/LoadingSpinner'
 import { ErrorBanner } from '../shared/ErrorBanner'
 import { EmptyState } from '../shared/EmptyState'
 import { JobCard } from './JobCard'
-import { ResultsFilterPanel } from './ResultsFilterPanel'
+import type { JobFiltersResponse } from '../../types'
 
 const PAGE_SIZE = 20
 
-export function ResultsList() {
+interface ResultsListProps {
+  onFiltersLoaded: (data: JobFiltersResponse) => void
+}
+
+function ChevronLeft() {
+  return (
+    <svg className="h-4 w-4" viewBox="0 0 16 16" fill="currentColor" aria-hidden="true">
+      <path fillRule="evenodd" d="M9.78 4.22a.75.75 0 0 1 0 1.06L7.06 8l2.72 2.72a.75.75 0 1 1-1.06 1.06L5.47 8.53a.75.75 0 0 1 0-1.06l3.25-3.25a.75.75 0 0 1 1.06 0Z" clipRule="evenodd" />
+    </svg>
+  )
+}
+
+function ChevronRight() {
+  return (
+    <svg className="h-4 w-4" viewBox="0 0 16 16" fill="currentColor" aria-hidden="true">
+      <path fillRule="evenodd" d="M6.22 4.22a.75.75 0 0 1 1.06 0l3.25 3.25a.75.75 0 0 1 0 1.06l-3.25 3.25a.75.75 0 0 1-1.06-1.06L8.94 8 6.22 5.28a.75.75 0 0 1 0-1.06Z" clipRule="evenodd" />
+    </svg>
+  )
+}
+
+function SearchIdleState() {
+  return (
+    <div className="flex h-full flex-col items-center justify-center gap-4 px-8 py-16 text-center">
+      <div className="flex h-14 w-14 items-center justify-center rounded-2xl bg-slate-100 text-slate-400">
+        <svg
+          className="h-7 w-7"
+          fill="none"
+          stroke="currentColor"
+          strokeWidth={1.5}
+          viewBox="0 0 24 24"
+          aria-hidden="true"
+        >
+          <path
+            strokeLinecap="round"
+            strokeLinejoin="round"
+            d="m21 21-5.197-5.197m0 0A7.5 7.5 0 1 0 5.196 5.196a7.5 7.5 0 0 0 10.607 10.607Z"
+          />
+        </svg>
+      </div>
+      <div>
+        <p className="text-sm font-semibold text-slate-700">Search for jobs using the panel on the left</p>
+        <p className="mt-1 text-xs text-slate-400">Results will appear here once a search completes.</p>
+      </div>
+    </div>
+  )
+}
+
+export function ResultsList({ onFiltersLoaded }: ResultsListProps) {
   const activeSearchJobId = useJobSearchStore((s) => s.activeSearchJobId)
   const criteria = useJobSearchStore((s) => s.criteria)
   const setCriteria = useJobSearchStore((s) => s.setCriteria)
+  const selectedSources = useJobSearchStore((s) => s.selectedSources)
+  const selectedCompanies = useJobSearchStore((s) => s.selectedCompanies)
+  const selectedJob = useJobSearchStore((s) => s.selectedJob)
+  const setSelectedJob = useJobSearchStore((s) => s.setSelectedJob)
   const page = criteria.page ?? 1
 
-  const [selectedSources, setSelectedSources] = useState<string[]>([])
-  const [selectedCompanies, setSelectedCompanies] = useState<string[]>([])
-
-  // Reset filter state whenever the active search changes
   useEffect(() => {
-    setSelectedSources([])
-    setSelectedCompanies([])
-  }, [activeSearchJobId])
+    setSelectedJob(null)
+  }, [activeSearchJobId, setSelectedJob])
 
-  // Poll search status
+  useEffect(() => {
+    document.getElementById('results-col')?.scrollTo({ top: 0 })
+  }, [activeSearchJobId, selectedSources, selectedCompanies])
+
   const statusQuery = useQuery({
     queryKey: ['searchStatus', activeSearchJobId],
     queryFn: () => getSearchStatus(activeSearchJobId!),
@@ -40,14 +89,17 @@ export function ResultsList() {
   const isSearchComplete = statusQuery.data?.status === 'complete'
   const isSearchFailed = statusQuery.data?.status === 'failed'
 
-  // Fetch available filter options once the search is done
   const filtersQuery = useQuery({
     queryKey: ['jobFilters', activeSearchJobId],
     queryFn: () => getJobFilters(activeSearchJobId!),
     enabled: isSearchComplete && !!activeSearchJobId,
   })
 
-  // Fetch jobs once complete, re-fetch when filters or page change
+  useEffect(() => {
+    if (filtersQuery.data) onFiltersLoaded(filtersQuery.data)
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [filtersQuery.data])
+
   const jobsQuery = useQuery({
     queryKey: ['jobs', activeSearchJobId, page, selectedSources, selectedCompanies],
     queryFn: () =>
@@ -61,7 +113,6 @@ export function ResultsList() {
     enabled: isSearchComplete && !!activeSearchJobId,
   })
 
-  // Announce to screen readers when results arrive
   const liveRef = useRef<HTMLParagraphElement>(null)
   useEffect(() => {
     if (jobsQuery.data && liveRef.current) {
@@ -69,37 +120,53 @@ export function ResultsList() {
     }
   }, [jobsQuery.data])
 
-  // Reset to page 1 when filters change
-  function handleSourceChange(sources: string[]) {
-    setSelectedSources(sources)
-    setCriteria({ page: 1 })
+  if (!activeSearchJobId) {
+    return <SearchIdleState />
   }
-
-  function handleCompanyChange(companies: string[]) {
-    setSelectedCompanies(companies)
-    setCriteria({ page: 1 })
-  }
-
-  if (!activeSearchJobId) return null
 
   const isPolling = statusQuery.data?.status === 'queued' || statusQuery.data?.status === 'running'
   const isLoadingJobs = isSearchComplete && jobsQuery.isLoading
 
   if (statusQuery.isError) {
     return (
-      <section aria-label="Search results" className="mx-auto w-full max-w-3xl">
+      <div className="p-5">
         <ErrorBanner message="Could not check search status. Please try again." />
-      </section>
+      </div>
     )
   }
 
   if (isSearchFailed) {
     return (
-      <section aria-label="Search results" className="mx-auto w-full max-w-3xl">
+      <div className="p-5">
         <ErrorBanner
-          message={statusQuery.data?.error ?? 'The search failed. Please try again with different criteria.'}
+          message={
+            statusQuery.data?.error ??
+            'The search failed. Please try again with different criteria.'
+          }
         />
-      </section>
+      </div>
+    )
+  }
+
+  if (isPolling || isLoadingJobs) {
+    return (
+      <div className="flex h-full items-center justify-center">
+        <LoadingSpinner
+          label={isPolling ? 'Searching job boards…' : 'Loading results…'}
+          size="lg"
+        />
+      </div>
+    )
+  }
+
+  if (jobsQuery.isError) {
+    return (
+      <div className="p-5">
+        <ErrorBanner
+          message="Failed to load job listings. Please try again."
+          onRetry={() => jobsQuery.refetch()}
+        />
+      </div>
     )
   }
 
@@ -112,126 +179,109 @@ export function ResultsList() {
       })
     : []
 
-  const totalPages = jobsQuery.data
-    ? Math.ceil(jobsQuery.data.total / PAGE_SIZE)
-    : 0
+  const total = jobsQuery.data?.total ?? 0
+  const totalPages = jobsQuery.data ? Math.ceil(total / PAGE_SIZE) : 0
 
-  // Show the filter panel only when there is meaningful filter data:
-  // at least 2 distinct sources OR at least 1 company.
-  const filtersData = filtersQuery.data
-  const showFilterPanel =
-    isSearchComplete &&
-    filtersData != null &&
-    (filtersData.sources.length >= 2 || filtersData.companies.length > 0)
-
-  return (
-    <section
-      aria-label="Search results"
-      className={`mx-auto w-full ${showFilterPanel ? 'max-w-5xl' : 'max-w-3xl'}`}
-    >
-      {/* Live region for screen readers */}
-      <p aria-live="polite" aria-atomic="true" className="sr-only" ref={liveRef} />
-
-      {(isPolling || isLoadingJobs) && (
-        <LoadingSpinner
-          label={isPolling ? 'Searching job boards...' : 'Loading results...'}
-          size="lg"
-        />
-      )}
-
-      {jobsQuery.isError && (
-        <ErrorBanner
-          message="Failed to load job listings. Please try again."
-          onRetry={() => jobsQuery.refetch()}
-        />
-      )}
-
-      {/* Search returned nothing at all and there are no filters to show */}
-      {isSearchComplete && !isLoadingJobs && !jobsQuery.isError && sortedJobs.length === 0 && !showFilterPanel && (
+  if (sortedJobs.length === 0) {
+    return (
+      <div className="p-5">
         <EmptyState
           title="No jobs found"
           description="No results matched your search. Try different keywords, remove filters, or expand your location."
         />
-      )}
+      </div>
+    )
+  }
 
-      {/* Main layout: sidebar (when filters available) + results column */}
-      {isSearchComplete && !isLoadingJobs && !jobsQuery.isError && (showFilterPanel || sortedJobs.length > 0) && (
-        <div className={showFilterPanel ? 'flex gap-6 items-start' : undefined}>
-          {/* Left sidebar — always shown when filter data exists, even if current filters yield 0 results */}
-          {showFilterPanel && (
-            <aside className="w-52 shrink-0 self-start sticky top-4">
-              <ResultsFilterPanel
-                sources={filtersData!.sources}
-                companies={filtersData!.companies}
-                selectedSources={selectedSources}
-                selectedCompanies={selectedCompanies}
-                onSourceChange={handleSourceChange}
-                onCompanyChange={handleCompanyChange}
-              />
-            </aside>
+  return (
+    <section aria-label="Search results" className="flex flex-col">
+      <p aria-live="polite" aria-atomic="true" className="sr-only" ref={liveRef} />
+
+      {/* Results header */}
+      <div className="sticky top-0 z-10 flex items-center justify-between border-b border-slate-100 bg-white px-4 py-2.5">
+        <div className="flex items-baseline gap-1.5">
+          <span className="text-[13px] font-semibold text-slate-800">{total}</span>
+          <span className="text-[12px] text-slate-500">jobs found</span>
+          {statusQuery.data?.total_results != null && (
+            <span className="text-[11px] text-slate-400">
+              of {statusQuery.data.total_results} scraped
+            </span>
           )}
-
-          {/* Right — job list or filter-empty state */}
-          <div className={showFilterPanel ? 'min-w-0 flex-1' : undefined}>
-            {sortedJobs.length === 0 ? (
-              <EmptyState
-                title="No jobs match your filters"
-                description="This source and company combination has no overlap. Try clearing one of the filters."
-              />
-            ) : (
-              <>
-                <div className="mb-3 flex items-center justify-between">
-                  <p className="text-sm text-gray-600">
-                    <span className="font-medium">{jobsQuery.data?.total}</span> jobs found
-                    {statusQuery.data?.total_results !== null &&
-                      statusQuery.data?.total_results !== undefined && (
-                        <span className="text-gray-400"> (from {statusQuery.data.total_results} scraped)</span>
-                      )}
-                  </p>
-                  <p className="text-sm text-gray-500">
-                    Page {page} of {totalPages}
-                  </p>
-                </div>
-
-                <ul className="flex flex-col gap-3" role="list" aria-label="Job listings">
-                  {sortedJobs.map((job) => (
-                    <li key={job.id}>
-                      <JobCard job={job} />
-                    </li>
-                  ))}
-                </ul>
-
-                {/* Pagination */}
-                {totalPages > 1 && (
-                  <nav
-                    aria-label="Results pagination"
-                    className="mt-6 flex items-center justify-center gap-2"
-                  >
-                    <button
-                      onClick={() => setCriteria({ page: page - 1 })}
-                      disabled={page <= 1}
-                      aria-label="Previous page"
-                      className="rounded-md border border-gray-300 px-3 py-1.5 text-sm font-medium text-gray-700 hover:bg-gray-50 focus:outline-none focus:ring-2 focus:ring-blue-500 disabled:cursor-not-allowed disabled:opacity-40"
-                    >
-                      &larr; Prev
-                    </button>
-                    <span className="text-sm text-gray-600">
-                      {page} / {totalPages}
-                    </span>
-                    <button
-                      onClick={() => setCriteria({ page: page + 1 })}
-                      disabled={page >= totalPages}
-                      aria-label="Next page"
-                      className="rounded-md border border-gray-300 px-3 py-1.5 text-sm font-medium text-gray-700 hover:bg-gray-50 focus:outline-none focus:ring-2 focus:ring-blue-500 disabled:cursor-not-allowed disabled:opacity-40"
-                    >
-                      Next &rarr;
-                    </button>
-                  </nav>
-                )}
-              </>
-            )}
-          </div>
         </div>
+        {totalPages > 1 && (
+          <span className="text-[11px] text-slate-400">
+            Page {page} of {totalPages}
+          </span>
+        )}
+      </div>
+
+      {/* Job list */}
+      <ul className="flex flex-col gap-0 divide-y divide-slate-50" role="list" aria-label="Job listings">
+        {sortedJobs.map((job) => (
+          <li key={job.id} className="px-3 py-2.5">
+            <JobCard
+              job={job}
+              onShowDetail={() => setSelectedJob(job)}
+              isSelected={selectedJob?.id === job.id}
+            />
+          </li>
+        ))}
+      </ul>
+
+      {/* Pagination */}
+      {totalPages > 1 && (
+        <nav
+          aria-label="Results pagination"
+          className="flex items-center justify-center gap-2 border-t border-slate-100 px-5 py-3.5"
+        >
+          <button
+            onClick={() => setCriteria({ page: page - 1 })}
+            disabled={page <= 1}
+            aria-label="Previous page"
+            className="inline-flex items-center gap-1 rounded-lg border border-slate-200 bg-white px-3 py-1.5 text-[12px] font-medium text-slate-600 transition hover:bg-slate-50 hover:border-slate-300 focus:outline-none focus:ring-2 focus:ring-indigo-500 disabled:cursor-not-allowed disabled:opacity-40"
+          >
+            <ChevronLeft />
+            Prev
+          </button>
+          <div className="flex items-center gap-1">
+            {Array.from({ length: Math.min(totalPages, 7) }, (_, i) => {
+              let pageNum: number
+              if (totalPages <= 7) {
+                pageNum = i + 1
+              } else if (page <= 4) {
+                pageNum = i + 1
+              } else if (page >= totalPages - 3) {
+                pageNum = totalPages - 6 + i
+              } else {
+                pageNum = page - 3 + i
+              }
+              return (
+                <button
+                  key={pageNum}
+                  onClick={() => setCriteria({ page: pageNum })}
+                  aria-label={`Page ${pageNum}`}
+                  aria-current={pageNum === page ? 'page' : undefined}
+                  className={`h-7 w-7 rounded-lg text-[12px] font-medium transition focus:outline-none focus:ring-2 focus:ring-indigo-500 ${
+                    pageNum === page
+                      ? 'bg-indigo-600 text-white shadow-sm'
+                      : 'text-slate-600 hover:bg-slate-100'
+                  }`}
+                >
+                  {pageNum}
+                </button>
+              )
+            })}
+          </div>
+          <button
+            onClick={() => setCriteria({ page: page + 1 })}
+            disabled={page >= totalPages}
+            aria-label="Next page"
+            className="inline-flex items-center gap-1 rounded-lg border border-slate-200 bg-white px-3 py-1.5 text-[12px] font-medium text-slate-600 transition hover:bg-slate-50 hover:border-slate-300 focus:outline-none focus:ring-2 focus:ring-indigo-500 disabled:cursor-not-allowed disabled:opacity-40"
+          >
+            Next
+            <ChevronRight />
+          </button>
+        </nav>
       )}
     </section>
   )
