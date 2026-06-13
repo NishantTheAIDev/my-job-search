@@ -48,9 +48,9 @@ beforeEach(() => {
 })
 
 describe('ResultsList', () => {
-  it('renders prompt when no active search', () => {
-    render(<ResultsList onFiltersLoaded={noop} />, { wrapper })
-    expect(screen.getByText(/search for jobs/i)).toBeInTheDocument()
+  it('renders nothing when no active search (landing handles the empty state)', () => {
+    const { container } = render(<ResultsList onFiltersLoaded={noop} />, { wrapper })
+    expect(container).toBeEmptyDOMElement()
   })
 
   it('shows loading spinner when status is running', async () => {

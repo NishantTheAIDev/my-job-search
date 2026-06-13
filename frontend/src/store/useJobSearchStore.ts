@@ -18,6 +18,7 @@ interface JobSearchState {
   setActiveApplication: (id: string | null) => void
   setResumeUploaded: (v: boolean) => void
   setShowApproval: (v: boolean) => void
+  resetToLanding: () => void
 }
 
 export const useJobSearchStore = create<JobSearchState>((set) => ({
@@ -37,4 +38,12 @@ export const useJobSearchStore = create<JobSearchState>((set) => ({
   setActiveApplication: (id) => set({ activeApplicationId: id }),
   setResumeUploaded: (v) => set({ resumeUploaded: v }),
   setShowApproval: (v) => set({ showApproval: v }),
+  resetToLanding: () =>
+    set({
+      activeSearchJobId: null,
+      selectedJob: null,
+      selectedSources: [],
+      selectedCompanies: [],
+      criteria: { query: '', remote_only: false, page: 1 },
+    }),
 }))
