@@ -100,6 +100,28 @@ def apply_theme(yaml_str: str, theme: str) -> str:
     return yaml.dump(document, allow_unicode=True, sort_keys=False)
 
 
+def _strip_page_decorations(document: dict) -> dict:
+    """Disable RenderCV's top note ("Last updated in <month>") and page footer
+    ("<Name> – n/m") for every theme.
+
+    Both are theme ``design.page`` options (``show_top_note`` /
+    ``show_footer``) defined on ClassicTheme, which all built-in themes derive
+    from — so setting them here applies regardless of the selected theme.
+    Mutates and returns *document*.
+    """
+    design = document.get("design")
+    if not isinstance(design, dict):
+        design = {}
+        document["design"] = design
+    page = design.get("page")
+    if not isinstance(page, dict):
+        page = {}
+        design["page"] = page
+    page["show_top_note"] = False
+    page["show_footer"] = False
+    return document
+
+
 def _guess_region(cv: dict) -> str | None:
     text = str(cv.get("location", "")).lower()
     for name, region in _COUNTRY_TO_REGION.items():
@@ -259,6 +281,7 @@ def render_pdf(yaml_str: str) -> bytes:
     try:
         document = yaml.safe_load(yaml_str)
         if isinstance(document, dict) and "cv" in document:
+            _strip_page_decorations(document)
             yaml_str = yaml.dump(_make_renderable(document), allow_unicode=True, sort_keys=False)
     except yaml.YAMLError as exc:
         logger.warning("rendercv: could not pre-parse YAML for repair: %s", exc)
