@@ -31,6 +31,8 @@ const sampleApplication: ApplicationResponse = {
   resume_diff_json: '[]',
   cover_letter_text: 'Dear Hiring Manager...',
   tailoring_failed: false,
+  resume_data_yaml: '',
+  cover_letter_data_yaml: '',
   created_at: '2026-05-20T10:00:00Z',
   approved_at: null,
   submitted_at: null,

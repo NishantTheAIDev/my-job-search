@@ -1,11 +1,15 @@
-import { useEffect, useState } from 'react'
+import { useEffect, useRef, useState } from 'react'
 import { useQuery, useMutation, useQueryClient } from '@tanstack/react-query'
 import type { AxiosError } from 'axios'
 import {
   getApplicationByJob,
   rejectApplication,
+  reviseApplication,
+  editApplicationContent,
   getResumeDownloadUrl,
   getCoverLetterDownloadUrl,
+  RENDERCV_THEMES,
+  DEFAULT_RENDERCV_THEME,
   PREPARE_POLL_MAX_RETRIES,
 } from '../../api/applications'
 import { useJobSearchStore } from '../../store/useJobSearchStore'
@@ -36,6 +40,27 @@ const STATUS_STYLES: Record<string, string> = {
   failed: 'bg-rose-50 text-rose-700 ring-1 ring-rose-200',
 }
 
+// Small spinner icon for inline use
+function InlineSpinner() {
+  return (
+    <svg
+      className="h-3.5 w-3.5 animate-spin"
+      viewBox="0 0 24 24"
+      fill="none"
+      stroke="currentColor"
+      strokeWidth={2}
+      aria-hidden="true"
+    >
+      <circle className="opacity-25" cx="12" cy="12" r="10" strokeWidth="4" />
+      <path
+        className="opacity-75"
+        fill="currentColor"
+        d="M4 12a8 8 0 018-8V0C5.373 0 0 5.373 0 12h4z"
+      />
+    </svg>
+  )
+}
+
 export function ResumeEditor() {
   const activeApplicationId = useJobSearchStore((s) => s.activeApplicationId)
   const setActiveApplication = useJobSearchStore((s) => s.setActiveApplication)
@@ -44,6 +69,22 @@ export function ResumeEditor() {
 
   const [showRejectConfirm, setShowRejectConfirm] = useState(false)
   const [activeTab, setActiveTab] = useState<'diff' | 'cover'>('diff')
+
+  // Cache-busting version counter — bumped on every successful revise/edit so
+  // re-downloads aren't served stale from the browser cache.
+  const [downloadVersion, setDownloadVersion] = useState(0)
+
+  // Resume direct-edit state
+  const [resumeEditMode, setResumeEditMode] = useState(false)
+  const [resumeEditText, setResumeEditText] = useState('')
+
+  // Cover letter direct-edit state
+  const [coverEditMode, setCoverEditMode] = useState(false)
+  const [coverEditText, setCoverEditText] = useState('')
+
+  // Request-changes inputs
+  const [resumeReviseInput, setResumeReviseInput] = useState('')
+  const [coverReviseInput, setCoverReviseInput] = useState('')
 
   // activeApplicationId holds the job posting id. The prepare pipeline creates
   // the Application row up front in the `preparing` state, then advances
@@ -62,6 +103,45 @@ export function ResumeEditor() {
 
   const isPreparing = appQuery.data?.status === 'preparing'
   const prepFailed = appQuery.data?.status === 'prep_failed'
+  const isPending = appQuery.data?.status === 'pending'
+
+  // Seed local edit buffers whenever server data changes (e.g. after a successful
+  // revise/edit). Only sync when not currently in edit mode to avoid clobbering
+  // the user's in-progress edits mid-flight.
+  const servedResumeText = appQuery.data?.tailored_resume_text ?? ''
+  const servedCoverText = appQuery.data?.cover_letter_text ?? ''
+  const prevResumeRef = useRef(servedResumeText)
+  const prevCoverRef = useRef(servedCoverText)
+
+  useEffect(() => {
+    if (servedResumeText !== prevResumeRef.current) {
+      prevResumeRef.current = servedResumeText
+      if (!resumeEditMode) {
+        setResumeEditText(servedResumeText)
+      }
+    }
+  }, [servedResumeText, resumeEditMode])
+
+  useEffect(() => {
+    if (servedCoverText !== prevCoverRef.current) {
+      prevCoverRef.current = servedCoverText
+      if (!coverEditMode) {
+        setCoverEditText(servedCoverText)
+      }
+    }
+  }, [servedCoverText, coverEditMode])
+
+  // Initialize edit buffers on first data load
+  useEffect(() => {
+    if (appQuery.data && resumeEditText === '') {
+      setResumeEditText(appQuery.data.tailored_resume_text)
+    }
+    if (appQuery.data && coverEditText === '') {
+      setCoverEditText(appQuery.data.cover_letter_text)
+    }
+    // Only run when data first arrives — intentionally omitting edit text deps
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [appQuery.data])
 
   const rejectMutation = useMutation({
     mutationFn: () => rejectApplication(appQuery.data!.id),
@@ -72,15 +152,39 @@ export function ResumeEditor() {
     },
   })
 
+  const reviseMutation = useMutation({
+    mutationFn: ({ target, instructions }: { target: 'resume' | 'cover_letter'; instructions: string }) =>
+      reviseApplication(appQuery.data!.id, target, instructions),
+    onSuccess: () => {
+      queryClient.invalidateQueries({ queryKey: ['application', activeApplicationId] })
+      setResumeReviseInput('')
+      setCoverReviseInput('')
+      setDownloadVersion((v) => v + 1)
+    },
+  })
+
+  const editMutation = useMutation({
+    mutationFn: ({ target, text }: { target: 'resume' | 'cover_letter'; text: string }) =>
+      editApplicationContent(appQuery.data!.id, target, text),
+    onSuccess: (_data, variables) => {
+      queryClient.invalidateQueries({ queryKey: ['application', activeApplicationId] })
+      setDownloadVersion((v) => v + 1)
+      if (variables.target === 'resume') {
+        setResumeEditMode(false)
+      } else {
+        setCoverEditMode(false)
+      }
+    },
+  })
+
   useEffect(() => {
-    const isPending = appQuery.data?.status === 'pending'
     if (!isPending) return
     function handleBeforeUnload(e: BeforeUnloadEvent) {
       e.preventDefault()
     }
     window.addEventListener('beforeunload', handleBeforeUnload)
     return () => window.removeEventListener('beforeunload', handleBeforeUnload)
-  }, [appQuery.data?.status])
+  }, [isPending])
 
   if (!activeApplicationId) return null
 
@@ -104,7 +208,6 @@ export function ResumeEditor() {
     }
   }
 
-  const isPending = appQuery.data?.status === 'pending'
   const isReady = !!appQuery.data && !isPreparing && !prepFailed
   const status = appQuery.data?.status ?? 'pending'
   const appId = appQuery.data?.id
@@ -114,6 +217,34 @@ export function ResumeEditor() {
   // `preparing`.
   const canDownloadResume = !!appId && !!appQuery.data?.tailored_resume_text
   const canDownloadCoverLetter = !!appId && !!appQuery.data?.cover_letter_text
+
+  // Cache-busted URL builder — appends ?v=<counter> so the browser re-fetches
+  // after a revise/edit rather than serving a stale cached file.
+  function versioned(url: string) {
+    if (downloadVersion === 0) return url
+    const sep = url.includes('?') ? '&' : '?'
+    return `${url}${sep}v=${downloadVersion}`
+  }
+
+  const resumeRevising =
+    reviseMutation.isPending && reviseMutation.variables?.target === 'resume'
+  const coverRevising =
+    reviseMutation.isPending && reviseMutation.variables?.target === 'cover_letter'
+  const resumeSaving =
+    editMutation.isPending && editMutation.variables?.target === 'resume'
+  const coverSaving =
+    editMutation.isPending && editMutation.variables?.target === 'cover_letter'
+
+  const reviseError =
+    reviseMutation.isError
+      ? (reviseMutation.error as AxiosError<{ detail?: string }>)?.response?.data?.detail ??
+        'Request failed. Please try again.'
+      : null
+  const editError =
+    editMutation.isError
+      ? (editMutation.error as AxiosError<{ detail?: string }>)?.response?.data?.detail ??
+        'Save failed. Please try again.'
+      : null
 
   return (
     <>
@@ -161,13 +292,17 @@ export function ResumeEditor() {
             {canDownloadResume && (
               <DownloadMenu
                 label="Resume"
-                urlFor={(format) => getResumeDownloadUrl(appId!, format)}
+                themes={RENDERCV_THEMES}
+                defaultTheme={DEFAULT_RENDERCV_THEME}
+                urlFor={(format, theme) =>
+                  versioned(getResumeDownloadUrl(appId!, format, theme))
+                }
               />
             )}
             {canDownloadCoverLetter && (
               <DownloadMenu
                 label="Cover letter"
-                urlFor={(format) => getCoverLetterDownloadUrl(appId!, format)}
+                urlFor={(format) => versioned(getCoverLetterDownloadUrl(appId!, format))}
               />
             )}
           </div>
@@ -238,20 +373,268 @@ export function ResumeEditor() {
                 {activeTab === 'diff' ? (
                   <section aria-labelledby="diff-heading">
                     <h3 id="diff-heading" className="sr-only">Tailored Resume Changes</h3>
-                    <DiffView hunks={diffHunks} />
+
+                    {/* Resume edit toggle header */}
+                    {isPending && (
+                      <div className="mb-3 flex items-center justify-between">
+                        <span className="text-[11px] font-semibold uppercase tracking-widest text-slate-400">
+                          {resumeEditMode ? 'Editing resume' : 'Resume diff'}
+                        </span>
+                        <button
+                          type="button"
+                          onClick={() => {
+                            if (resumeEditMode) {
+                              // Discard unsaved edits and revert to served text
+                              setResumeEditText(servedResumeText)
+                              setResumeEditMode(false)
+                            } else {
+                              setResumeEditText(servedResumeText)
+                              setResumeEditMode(true)
+                            }
+                          }}
+                          disabled={resumeSaving || resumeRevising}
+                          className="inline-flex items-center gap-1 rounded-md border border-slate-200 px-2.5 py-1 text-[12px] font-medium text-slate-600 transition hover:bg-slate-50 focus:outline-none focus:ring-2 focus:ring-indigo-500 focus:ring-offset-1 disabled:opacity-50"
+                        >
+                          {resumeEditMode ? (
+                            <>
+                              <svg className="h-3 w-3" viewBox="0 0 16 16" fill="currentColor" aria-hidden="true">
+                                <path d="M3.72 3.72a.75.75 0 0 1 1.06 0L8 6.94l3.22-3.22a.75.75 0 1 1 1.06 1.06L9.06 8l3.22 3.22a.75.75 0 1 1-1.06 1.06L8 9.06l-3.22 3.22a.75.75 0 0 1-1.06-1.06L6.94 8 3.72 4.78a.75.75 0 0 1 0-1.06Z" />
+                              </svg>
+                              Cancel edit
+                            </>
+                          ) : (
+                            <>
+                              <svg className="h-3 w-3" viewBox="0 0 16 16" fill="currentColor" aria-hidden="true">
+                                <path d="M11.013 1.427a1.75 1.75 0 0 1 2.474 0l1.086 1.086a1.75 1.75 0 0 1 0 2.474l-8.61 8.61c-.21.21-.47.364-.756.445l-3.251.93a.75.75 0 0 1-.927-.928l.929-3.25c.081-.286.235-.547.445-.758l8.61-8.61Zm.176 4.823L9.75 4.81l-6.286 6.287a.253.253 0 0 0-.064.108l-.558 1.953 1.953-.558a.253.253 0 0 0 .108-.064Zm1.238-3.763a.25.25 0 0 0-.354 0L10.811 3.75l1.439 1.44 1.263-1.263a.25.25 0 0 0 0-.354Z" />
+                              </svg>
+                              Edit content
+                            </>
+                          )}
+                        </button>
+                      </div>
+                    )}
+
+                    {/* Resume direct-edit textarea */}
+                    {resumeEditMode && isPending ? (
+                      <div className="flex flex-col gap-2">
+                        <div className="rounded-xl border border-indigo-200 bg-white ring-1 ring-indigo-100">
+                          <textarea
+                            value={resumeEditText}
+                            onChange={(e) => setResumeEditText(e.target.value)}
+                            rows={20}
+                            aria-label="Edit tailored resume text"
+                            disabled={resumeSaving}
+                            className="w-full resize-y rounded-xl bg-transparent p-4 font-mono text-[12px] leading-relaxed text-slate-700 focus:outline-none disabled:opacity-60"
+                          />
+                        </div>
+                        {editError && editMutation.variables?.target === 'resume' && (
+                          <p role="alert" className="text-[11px] text-rose-600">
+                            {editError}
+                          </p>
+                        )}
+                        <div className="flex gap-2">
+                          <button
+                            type="button"
+                            onClick={() => editMutation.mutate({ target: 'resume', text: resumeEditText })}
+                            disabled={resumeSaving || resumeEditText.trim() === ''}
+                            aria-busy={resumeSaving}
+                            className="inline-flex items-center gap-1.5 rounded-lg bg-indigo-600 px-3.5 py-2 text-[13px] font-semibold text-white shadow-sm transition hover:bg-indigo-700 focus:outline-none focus:ring-2 focus:ring-indigo-500 focus:ring-offset-2 disabled:opacity-50"
+                          >
+                            {resumeSaving && <InlineSpinner />}
+                            {resumeSaving ? 'Saving…' : 'Save resume'}
+                          </button>
+                          <button
+                            type="button"
+                            onClick={() => {
+                              setResumeEditText(servedResumeText)
+                              setResumeEditMode(false)
+                            }}
+                            disabled={resumeSaving}
+                            className="rounded-lg border border-slate-200 px-3.5 py-2 text-[13px] font-medium text-slate-600 transition hover:bg-slate-50 focus:outline-none focus:ring-2 focus:ring-slate-400 focus:ring-offset-2 disabled:opacity-50"
+                          >
+                            Cancel
+                          </button>
+                        </div>
+                      </div>
+                    ) : (
+                      <DiffView hunks={diffHunks} />
+                    )}
+
+                    {/* Request changes — resume */}
+                    {isPending && !resumeEditMode && (
+                      <form
+                        className="mt-4 flex flex-col gap-2"
+                        onSubmit={(e) => {
+                          e.preventDefault()
+                          if (!resumeReviseInput.trim()) return
+                          reviseMutation.mutate({ target: 'resume', instructions: resumeReviseInput })
+                        }}
+                        aria-label="Request changes to resume"
+                      >
+                        <label htmlFor="resume-revise-input" className="text-[11px] font-semibold uppercase tracking-widest text-slate-400">
+                          Request changes
+                        </label>
+                        <div className="flex gap-2">
+                          <input
+                            id="resume-revise-input"
+                            type="text"
+                            value={resumeReviseInput}
+                            onChange={(e) => setResumeReviseInput(e.target.value)}
+                            placeholder="e.g. Emphasise Python experience more"
+                            disabled={resumeRevising}
+                            className="flex-1 rounded-lg border border-slate-200 px-3 py-2 text-[13px] text-slate-700 placeholder:text-slate-400 focus:border-indigo-400 focus:outline-none focus:ring-2 focus:ring-indigo-200 disabled:opacity-60"
+                          />
+                          <button
+                            type="submit"
+                            disabled={resumeRevising || !resumeReviseInput.trim()}
+                            aria-busy={resumeRevising}
+                            className="inline-flex items-center gap-1.5 rounded-lg bg-indigo-600 px-3.5 py-2 text-[13px] font-semibold text-white shadow-sm transition hover:bg-indigo-700 focus:outline-none focus:ring-2 focus:ring-indigo-500 focus:ring-offset-2 disabled:opacity-50"
+                          >
+                            {resumeRevising && <InlineSpinner />}
+                            {resumeRevising ? 'Applying…' : 'Request changes'}
+                          </button>
+                        </div>
+                        {reviseError && reviseMutation.variables?.target === 'resume' && (
+                          <p role="alert" className="text-[11px] text-rose-600">
+                            {reviseError}
+                          </p>
+                        )}
+                      </form>
+                    )}
                   </section>
                 ) : (
                   <section aria-labelledby="cover-letter-heading">
                     <h3 id="cover-letter-heading" className="sr-only">Cover Letter</h3>
+
+                    {/* Cover letter edit toggle header */}
+                    {isPending && (
+                      <div className="mb-3 flex items-center justify-between">
+                        <span className="text-[11px] font-semibold uppercase tracking-widest text-slate-400">
+                          Cover letter
+                        </span>
+                        <button
+                          type="button"
+                          onClick={() => {
+                            if (coverEditMode) {
+                              setCoverEditText(servedCoverText)
+                              setCoverEditMode(false)
+                            } else {
+                              setCoverEditText(servedCoverText)
+                              setCoverEditMode(true)
+                            }
+                          }}
+                          disabled={coverSaving || coverRevising}
+                          className="inline-flex items-center gap-1 rounded-md border border-slate-200 px-2.5 py-1 text-[12px] font-medium text-slate-600 transition hover:bg-slate-50 focus:outline-none focus:ring-2 focus:ring-indigo-500 focus:ring-offset-1 disabled:opacity-50"
+                        >
+                          {coverEditMode ? (
+                            <>
+                              <svg className="h-3 w-3" viewBox="0 0 16 16" fill="currentColor" aria-hidden="true">
+                                <path d="M3.72 3.72a.75.75 0 0 1 1.06 0L8 6.94l3.22-3.22a.75.75 0 1 1 1.06 1.06L9.06 8l3.22 3.22a.75.75 0 1 1-1.06 1.06L8 9.06l-3.22 3.22a.75.75 0 0 1-1.06-1.06L6.94 8 3.72 4.78a.75.75 0 0 1 0-1.06Z" />
+                              </svg>
+                              Cancel edit
+                            </>
+                          ) : (
+                            <>
+                              <svg className="h-3 w-3" viewBox="0 0 16 16" fill="currentColor" aria-hidden="true">
+                                <path d="M11.013 1.427a1.75 1.75 0 0 1 2.474 0l1.086 1.086a1.75 1.75 0 0 1 0 2.474l-8.61 8.61c-.21.21-.47.364-.756.445l-3.251.93a.75.75 0 0 1-.927-.928l.929-3.25c.081-.286.235-.547.445-.758l8.61-8.61Zm.176 4.823L9.75 4.81l-6.286 6.287a.253.253 0 0 0-.064.108l-.558 1.953 1.953-.558a.253.253 0 0 0 .108-.064Zm1.238-3.763a.25.25 0 0 0-.354 0L10.811 3.75l1.439 1.44 1.263-1.263a.25.25 0 0 0 0-.354Z" />
+                              </svg>
+                              Edit content
+                            </>
+                          )}
+                        </button>
+                      </div>
+                    )}
+
                     <div className="rounded-xl border border-slate-200 bg-slate-50 p-4">
                       <textarea
-                        readOnly
-                        value={appQuery.data!.cover_letter_text}
+                        readOnly={!coverEditMode || !isPending}
+                        value={coverEditMode && isPending ? coverEditText : appQuery.data!.cover_letter_text}
+                        onChange={(e) => setCoverEditText(e.target.value)}
                         rows={16}
-                        aria-label="Cover letter text (read only)"
-                        className="w-full resize-none bg-transparent text-[13px] leading-relaxed text-slate-700 focus:outline-none"
+                        aria-label={coverEditMode && isPending ? 'Edit cover letter text' : 'Cover letter text (read only)'}
+                        disabled={coverSaving}
+                        className={`w-full resize-none bg-transparent text-[13px] leading-relaxed text-slate-700 focus:outline-none disabled:opacity-60 ${
+                          coverEditMode && isPending
+                            ? 'rounded-lg border border-indigo-200 bg-white px-3 py-2 ring-1 ring-indigo-100'
+                            : ''
+                        }`}
                       />
                     </div>
+
+                    {coverEditMode && isPending && (
+                      <div className="mt-2 flex flex-col gap-2">
+                        {editError && editMutation.variables?.target === 'cover_letter' && (
+                          <p role="alert" className="text-[11px] text-rose-600">
+                            {editError}
+                          </p>
+                        )}
+                        <div className="flex gap-2">
+                          <button
+                            type="button"
+                            onClick={() => editMutation.mutate({ target: 'cover_letter', text: coverEditText })}
+                            disabled={coverSaving || coverEditText.trim() === ''}
+                            aria-busy={coverSaving}
+                            className="inline-flex items-center gap-1.5 rounded-lg bg-indigo-600 px-3.5 py-2 text-[13px] font-semibold text-white shadow-sm transition hover:bg-indigo-700 focus:outline-none focus:ring-2 focus:ring-indigo-500 focus:ring-offset-2 disabled:opacity-50"
+                          >
+                            {coverSaving && <InlineSpinner />}
+                            {coverSaving ? 'Saving…' : 'Save cover letter'}
+                          </button>
+                          <button
+                            type="button"
+                            onClick={() => {
+                              setCoverEditText(servedCoverText)
+                              setCoverEditMode(false)
+                            }}
+                            disabled={coverSaving}
+                            className="rounded-lg border border-slate-200 px-3.5 py-2 text-[13px] font-medium text-slate-600 transition hover:bg-slate-50 focus:outline-none focus:ring-2 focus:ring-slate-400 focus:ring-offset-2 disabled:opacity-50"
+                          >
+                            Cancel
+                          </button>
+                        </div>
+                      </div>
+                    )}
+
+                    {/* Request changes — cover letter */}
+                    {isPending && !coverEditMode && (
+                      <form
+                        className="mt-4 flex flex-col gap-2"
+                        onSubmit={(e) => {
+                          e.preventDefault()
+                          if (!coverReviseInput.trim()) return
+                          reviseMutation.mutate({ target: 'cover_letter', instructions: coverReviseInput })
+                        }}
+                        aria-label="Request changes to cover letter"
+                      >
+                        <label htmlFor="cover-revise-input" className="text-[11px] font-semibold uppercase tracking-widest text-slate-400">
+                          Request changes
+                        </label>
+                        <div className="flex gap-2">
+                          <input
+                            id="cover-revise-input"
+                            type="text"
+                            value={coverReviseInput}
+                            onChange={(e) => setCoverReviseInput(e.target.value)}
+                            placeholder="e.g. Make the opening paragraph more concise"
+                            disabled={coverRevising}
+                            className="flex-1 rounded-lg border border-slate-200 px-3 py-2 text-[13px] text-slate-700 placeholder:text-slate-400 focus:border-indigo-400 focus:outline-none focus:ring-2 focus:ring-indigo-200 disabled:opacity-60"
+                          />
+                          <button
+                            type="submit"
+                            disabled={coverRevising || !coverReviseInput.trim()}
+                            aria-busy={coverRevising}
+                            className="inline-flex items-center gap-1.5 rounded-lg bg-indigo-600 px-3.5 py-2 text-[13px] font-semibold text-white shadow-sm transition hover:bg-indigo-700 focus:outline-none focus:ring-2 focus:ring-indigo-500 focus:ring-offset-2 disabled:opacity-50"
+                          >
+                            {coverRevising && <InlineSpinner />}
+                            {coverRevising ? 'Applying…' : 'Request changes'}
+                          </button>
+                        </div>
+                        {reviseError && reviseMutation.variables?.target === 'cover_letter' && (
+                          <p role="alert" className="text-[11px] text-rose-600">
+                            {reviseError}
+                          </p>
+                        )}
+                      </form>
+                    )}
                   </section>
                 )}
               </div>

@@ -59,12 +59,12 @@ def _patch_pipeline(monkeypatch, *, fail_stage: str | None = None) -> None:
     async def fake_tailor(resume_text, parsed):
         if fail_stage == "tailoring":
             raise RuntimeError("tailor boom")
-        return ("tailored resume", "made changes", '[{"type":"added","text":"x","line":1}]', [])
+        return ("tailored resume", "made changes", '[{"type":"added","text":"x","line":1}]', [], {})
 
     async def fake_draft(text, parsed, title, company):
         if fail_stage == "drafting":
             raise RuntimeError("draft boom")
-        return ("Dear hiring manager", [])
+        return ("Dear hiring manager", "", ["Dear hiring manager"])
 
     monkeypatch.setattr(application_service, "_parse_jd", fake_parse_jd)
     monkeypatch.setattr(scoring_service, "score_resume", fake_score)

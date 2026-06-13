@@ -9,8 +9,16 @@ const FORMATS: { format: DownloadFormat; label: string }[] = [
 interface DownloadMenuProps {
   /** Button text, e.g. "Download resume". */
   label: string
-  /** Returns the download URL for a given file format. */
-  urlFor: (format: DownloadFormat) => string
+  /** Returns the download URL for a given file format and (optional) theme. */
+  urlFor: (format: DownloadFormat, theme?: string) => string
+  /**
+   * Optional RenderCV themes. When provided, a theme selector is shown and the
+   * chosen value is passed to `urlFor`. The theme only affects the PDF export;
+   * the .docx is plain text and ignores it.
+   */
+  themes?: { value: string; label: string }[]
+  /** Initially selected theme value (defaults to the first theme). */
+  defaultTheme?: string
 }
 
 /**
@@ -18,8 +26,9 @@ interface DownloadMenuProps {
  * download link to an export endpoint, which streams the file with a
  * Content-Disposition attachment header.
  */
-export function DownloadMenu({ label, urlFor }: DownloadMenuProps) {
+export function DownloadMenu({ label, urlFor, themes, defaultTheme }: DownloadMenuProps) {
   const [open, setOpen] = useState(false)
+  const [theme, setTheme] = useState(defaultTheme ?? themes?.[0]?.value)
   const containerRef = useRef<HTMLDivElement>(null)
 
   useEffect(() => {
@@ -63,13 +72,35 @@ export function DownloadMenu({ label, urlFor }: DownloadMenuProps) {
         <div
           role="menu"
           aria-label={`${label} — choose format`}
-          className="absolute right-0 z-50 mt-1 w-44 overflow-hidden rounded-lg border border-slate-200 bg-white py-1 shadow-lg"
+          className="absolute right-0 z-50 mt-1 w-52 overflow-hidden rounded-lg border border-slate-200 bg-white py-1 shadow-lg"
         >
+          {themes && themes.length > 0 && (
+            <div className="border-b border-slate-100 px-3 py-2">
+              <label
+                htmlFor="download-theme"
+                className="mb-1 block text-[11px] font-medium uppercase tracking-wide text-slate-400"
+              >
+                PDF theme
+              </label>
+              <select
+                id="download-theme"
+                value={theme}
+                onChange={(e) => setTheme(e.target.value)}
+                className="w-full rounded-md border border-slate-200 bg-white px-2 py-1.5 text-[13px] text-slate-700 focus:outline-none focus:ring-2 focus:ring-indigo-500"
+              >
+                {themes.map((t) => (
+                  <option key={t.value} value={t.value}>
+                    {t.label}
+                  </option>
+                ))}
+              </select>
+            </div>
+          )}
           {FORMATS.map(({ format, label: formatLabel }) => (
             <a
               key={format}
               role="menuitem"
-              href={urlFor(format)}
+              href={urlFor(format, theme)}
               download
               onClick={() => setOpen(false)}
               className="block px-3 py-2 text-[13px] text-slate-700 transition hover:bg-slate-50 focus:bg-slate-50 focus:outline-none"

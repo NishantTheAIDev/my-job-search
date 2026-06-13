@@ -76,6 +76,8 @@ export interface ApplicationResponse {
   resume_diff_json: string // JSON string: DiffHunk[]
   cover_letter_text: string
   tailoring_failed: boolean
+  resume_data_yaml: string
+  cover_letter_data_yaml: string
   created_at: string
   approved_at: string | null
   submitted_at: string | null

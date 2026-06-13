@@ -1,13 +1,14 @@
 """Resume export endpoints (.docx and .pdf)."""
 
 import io
+import logging
 import re
 import uuid
 from html import escape
 
 from docx import Document
 from docx.shared import Pt
-from fastapi import APIRouter, Depends, HTTPException
+from fastapi import APIRouter, Depends, HTTPException, Query
 from fastapi.responses import StreamingResponse
 from reportlab.lib.enums import TA_LEFT
 from reportlab.lib.pagesizes import LETTER
@@ -19,7 +20,10 @@ from sqlmodel import Session
 from backend.database import get_session
 from backend.models.application import Application
 from backend.models.job_posting import JobPosting
+from backend.services.rendercv_service import RENDERCV_THEMES, RenderError, apply_theme
+from backend.services.rendercv_service import render_pdf as _rendercv_render_pdf
 
+logger = logging.getLogger(__name__)
 router = APIRouter()
 
 
@@ -140,11 +144,31 @@ def download_resume_docx(app_id: uuid.UUID, session: Session = Depends(get_sessi
     return _attachment(_build_docx(app.tailored_resume_text or ""), _DOCX_MEDIA_TYPE, filename)
 
 
+def _render_pdf_with_fallback(yaml_str: str | None, fallback_text: str) -> bytes:
+    """Try rendercv; fall back to reportlab if YAML is empty or render fails."""
+    if yaml_str:
+        try:
+            return _rendercv_render_pdf(yaml_str)
+        except RenderError as exc:
+            logger.warning("rendercv render failed, falling back to reportlab: %s", exc)
+    return _build_pdf(fallback_text)
+
+
 @router.get("/{app_id}/resume.pdf")
-def download_resume_pdf(app_id: uuid.UUID, session: Session = Depends(get_session)):
+def download_resume_pdf(
+    app_id: uuid.UUID,
+    theme: str | None = Query(None),
+    session: Session = Depends(get_session),
+):
     app = _get_app_or_404(app_id, session)
+    if theme is not None and theme not in RENDERCV_THEMES:
+        raise HTTPException(status_code=400, detail=f"Unknown rendercv theme: {theme}")
     filename = _document_filename(app, session, "Resume", "pdf")
-    return _attachment(_build_pdf(app.tailored_resume_text or ""), "application/pdf", filename)
+    resume_yaml = app.resume_data_yaml or None
+    if resume_yaml and theme is not None:
+        resume_yaml = apply_theme(resume_yaml, theme)
+    pdf_bytes = _render_pdf_with_fallback(resume_yaml, app.tailored_resume_text or "")
+    return _attachment(pdf_bytes, "application/pdf", filename)
 
 
 @router.get("/{app_id}/cover-letter.docx")
@@ -158,4 +182,7 @@ def download_cover_letter_docx(app_id: uuid.UUID, session: Session = Depends(get
 def download_cover_letter_pdf(app_id: uuid.UUID, session: Session = Depends(get_session)):
     app = _get_app_or_404(app_id, session)
     filename = _document_filename(app, session, "CoverLetter", "pdf")
-    return _attachment(_build_pdf(app.cover_letter_text or ""), "application/pdf", filename)
+    pdf_bytes = _render_pdf_with_fallback(
+        app.cover_letter_data_yaml or None, app.cover_letter_text or ""
+    )
+    return _attachment(pdf_bytes, "application/pdf", filename)

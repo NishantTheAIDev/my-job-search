@@ -71,6 +71,8 @@ GET /applications/{id}/cover-letter.docx  |  /cover-letter.pdf
     in the ResumeEditor header and the ApprovalScreen section headers
 ```
 
+**RenderCV theme selection (resume PDF only)**: `GET /resume.pdf` accepts `?theme=` (validated against `RENDERCV_THEMES` in `backend/services/rendercv_service.py`, → 400 on unknown). The theme is swapped into the stored `resume_data_yaml` at download time via `rendercv_service.apply_theme()` — no re-tailoring. The `DownloadMenu` shows a "PDF theme" `<select>` only when passed the `themes` prop (resume only today); `getResumeDownloadUrl(id, format, theme)` appends `?theme=` for PDF only (DOCX is plain text and ignores it). **The cover letter is intentionally NOT themed yet — it renders with `settings.rendercv_theme`.** To add it later: pass `themes` to the cover-letter `DownloadMenu`, add a `theme` param to `getCoverLetterDownloadUrl`, and apply `?theme=` in the `cover-letter.pdf` endpoint the same way `resume.pdf` does (the `DownloadMenu` and `apply_theme` already support it).
+
 ### Background task session lifecycle
 
 **Critical**: Background tasks must create their own `Session(engine)` — never reuse the request session. FastAPI closes the request session before background tasks execute, so passing it produces silent "no active resume" failures. Pattern:
