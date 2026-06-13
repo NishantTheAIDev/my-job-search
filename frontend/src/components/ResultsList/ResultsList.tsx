@@ -31,33 +31,6 @@ function ChevronRight() {
   )
 }
 
-function SearchIdleState() {
-  return (
-    <div className="flex h-full flex-col items-center justify-center gap-4 px-8 py-16 text-center">
-      <div className="flex h-14 w-14 items-center justify-center rounded-2xl bg-slate-100 text-slate-400">
-        <svg
-          className="h-7 w-7"
-          fill="none"
-          stroke="currentColor"
-          strokeWidth={1.5}
-          viewBox="0 0 24 24"
-          aria-hidden="true"
-        >
-          <path
-            strokeLinecap="round"
-            strokeLinejoin="round"
-            d="m21 21-5.197-5.197m0 0A7.5 7.5 0 1 0 5.196 5.196a7.5 7.5 0 0 0 10.607 10.607Z"
-          />
-        </svg>
-      </div>
-      <div>
-        <p className="text-sm font-semibold text-slate-700">Search for jobs using the panel on the left</p>
-        <p className="mt-1 text-xs text-slate-400">Results will appear here once a search completes.</p>
-      </div>
-    </div>
-  )
-}
-
 export function ResultsList({ onFiltersLoaded }: ResultsListProps) {
   const activeSearchJobId = useJobSearchStore((s) => s.activeSearchJobId)
   const criteria = useJobSearchStore((s) => s.criteria)
@@ -120,9 +93,9 @@ export function ResultsList({ onFiltersLoaded }: ResultsListProps) {
     }
   }, [jobsQuery.data])
 
-  if (!activeSearchJobId) {
-    return <SearchIdleState />
-  }
+  // ResultsList only renders inside ResultsView, which mounts after a search
+  // starts — but guard defensively in case it's rendered without one.
+  if (!activeSearchJobId) return null
 
   const isPolling = statusQuery.data?.status === 'queued' || statusQuery.data?.status === 'running'
   const isLoadingJobs = isSearchComplete && jobsQuery.isLoading
