@@ -8,6 +8,7 @@ from datetime import UTC, datetime
 import yaml
 from sqlmodel import Session, select
 
+from backend.adapters.registry import ADAPTERS
 from backend.config import settings
 from backend.llm import client as llm
 from backend.llm.parsing import extract_json
@@ -145,6 +146,25 @@ async def prepare_application(
         session.commit()
 
     try:
+        # Some boards (e.g. LinkedIn) only return job cards at search time, leaving
+        # the description empty. Fetch it on demand now — for the one job the user is
+        # preparing — so the JD parse / scoring / tailoring run on real text. Persist
+        # it so re-prepares and the UI reuse it. sanitize_jd_text still runs in
+        # _parse_jd, so the prompt-injection invariant is unchanged.
+        if not (posting.description or "").strip():
+            adapter_cls = ADAPTERS.get(posting.source)
+            if adapter_cls:
+                fetched = await adapter_cls().fetch_description(posting)
+                if fetched:
+                    posting.description = fetched
+                    session.add(posting)
+                    session.commit()
+                    logger.info(
+                        "prepare_application: job=%s fetched description (%d chars)",
+                        job_id,
+                        len(fetched),
+                    )
+
         parsed_jd = await _parse_jd(posting.description)
         logger.info(
             "prepare_application: job=%s JD parsed — keys=%s",
