@@ -10,8 +10,6 @@ function syncCriteriaToUrl(criteria: SearchCriteria) {
   if (criteria.query) params.set('q', criteria.query)
   if (criteria.location) params.set('location', criteria.location)
   if (criteria.remote_only) params.set('remote', '1')
-  if (criteria.employment_type) params.set('type', criteria.employment_type)
-  if (criteria.seniority) params.set('seniority', criteria.seniority)
   if (criteria.posted_within_days) params.set('posted', String(criteria.posted_within_days))
   const search = params.toString()
   window.history.replaceState(null, '', search ? `?${search}` : window.location.pathname)
@@ -23,8 +21,6 @@ function parseCriteriaFromUrl(): Partial<SearchCriteria> {
     query: params.get('q') ?? '',
     location: params.get('location') ?? undefined,
     remote_only: params.get('remote') === '1',
-    employment_type: params.get('type') ?? undefined,
-    seniority: params.get('seniority') ?? undefined,
     posted_within_days: params.get('posted') ? parseInt(params.get('posted')!, 10) : undefined,
   }
 }

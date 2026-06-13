@@ -11,8 +11,6 @@ export interface SearchCriteria {
   query: string
   location?: string
   remote_only?: boolean
-  employment_type?: string
-  seniority?: string
   posted_within_days?: number
   page?: number
 }
@@ -35,6 +33,7 @@ export interface JobPosting {
   location: string | null
   remote_status: RemoteStatus
   url: string
+  description: string
   compensation: string | null
   posted_date: string | null
   match_score: number | null
@@ -53,12 +52,24 @@ export interface JobFiltersResponse {
 }
 
 // Applications
-export type ApplicationStatus = 'pending' | 'approved' | 'rejected' | 'submitted' | 'failed'
+export type ApplicationStatus =
+  | 'preparing'
+  | 'prep_failed'
+  | 'pending'
+  | 'approved'
+  | 'rejected'
+  | 'submitted'
+  | 'failed'
+
+// Pipeline stage reported on prep_stage while status === 'preparing'.
+export type PrepStage = '' | 'parsing' | 'scoring' | 'tailoring' | 'drafting'
 
 export interface ApplicationResponse {
   id: string
   job_posting_id: string
   status: ApplicationStatus
+  prep_stage: PrepStage
+  prep_error: string
   match_score: number
   match_rationale: string
   tailored_resume_text: string

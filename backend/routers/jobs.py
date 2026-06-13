@@ -8,6 +8,7 @@ from sqlmodel import Session, select
 from backend.background.tasks import prepare_application_task
 from backend.database import get_session
 from backend.models.job_posting import JobPosting, RemoteStatus
+from backend.models.resume import Resume
 
 logger = logging.getLogger(__name__)
 router = APIRouter()
@@ -21,6 +22,7 @@ class JobPostingResponse(BaseModel):
     location: str | None
     remote_status: RemoteStatus
     url: str
+    description: str
     compensation: str | None
     posted_date: str | None
     match_score: int | None
@@ -47,6 +49,7 @@ def _to_response(p: JobPosting) -> JobPostingResponse:
         location=p.location,
         remote_status=p.remote_status,
         url=p.url,
+        description=p.description,
         compensation=p.compensation,
         posted_date=p.posted_date,
         match_score=p.match_score,
@@ -120,6 +123,15 @@ async def prepare_application(
     posting = session.get(JobPosting, job_id)
     if not posting:
         raise HTTPException(status_code=404, detail="Job posting not found")
+
+    # Verify there is an active resume before queueing — otherwise the background
+    # task can't create an Application row and the client would poll a never-
+    # appearing row. Fail fast with a clear error instead.
+    resume = session.exec(
+        select(Resume).where(Resume.is_active == True)  # noqa: E712
+    ).first()
+    if not resume:
+        raise HTTPException(status_code=400, detail="No active resume — upload a resume first")
 
     background_tasks.add_task(prepare_application_task, job_id)
     logger.info("prepare queued: job_id=%s title=%r", job_id, posting.title)
