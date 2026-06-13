@@ -11,12 +11,13 @@ import asyncio
 import logging
 import random
 import re
-from datetime import datetime
+from datetime import UTC, datetime
 
 import httpx
 from tenacity import RetryError, retry, retry_if_exception, stop_after_attempt, wait_exponential
 
 from backend.adapters.base import JobBoardAdapter
+from backend.config import settings
 from backend.models.job_posting import JobPosting, RemoteStatus, SearchCriteria
 
 logger = logging.getLogger(__name__)
@@ -28,7 +29,6 @@ _PAGE_DELAY = (2.0, 4.0)
 _HEADERS = {
     "Host": "apis.indeed.com",
     "content-type": "application/json",
-    "indeed-api-key": "161092c2017b5bbab13edb12461a62d5a833871e7cad6d9d475304573de67ac8",
     "accept": "application/json",
     "indeed-locale": "en-US",
     "accept-language": "en-US,en;q=0.9",
@@ -161,7 +161,8 @@ class IndeedAdapter(JobBoardAdapter):
     async def _fetch_page(self, criteria: SearchCriteria, cursor: str | None) -> dict:
         query = self._build_query(criteria, cursor)
         payload = {"query": query}
-        async with httpx.AsyncClient(timeout=15.0, headers=_HEADERS) as client:
+        headers = {**_HEADERS, "indeed-api-key": settings.indeed_api_key.get_secret_value()}
+        async with httpx.AsyncClient(timeout=15.0, headers=headers) as client:
             resp = await client.post(_GRAPHQL_URL, json=payload)
             resp.raise_for_status()
             return resp.json()
@@ -195,7 +196,7 @@ class IndeedAdapter(JobBoardAdapter):
             ts_ms = job.get("datePublished")
             posted_date = None
             if ts_ms is not None:
-                posted_date = datetime.fromtimestamp(ts_ms / 1000).strftime("%Y-%m-%d")
+                posted_date = datetime.fromtimestamp(ts_ms / 1000, tz=UTC).strftime("%Y-%m-%d")
 
             compensation = _format_compensation(job.get("compensation"))
 
@@ -216,6 +217,10 @@ class IndeedAdapter(JobBoardAdapter):
             return None
 
     async def search(self, criteria: SearchCriteria) -> list[JobPosting]:
+        if not settings.indeed_api_key.get_secret_value():
+            logger.info("indeed: INDEED_API_KEY not set — skipping")
+            return []
+
         postings: list[JobPosting] = []
         seen_ids: set[str] = set()
         cursor: str | None = None

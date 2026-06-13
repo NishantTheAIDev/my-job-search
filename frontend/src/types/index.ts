@@ -56,7 +56,6 @@ export type ApplicationStatus =
   | 'preparing'
   | 'prep_failed'
   | 'pending'
-  | 'approved'
   | 'rejected'
   | 'submitted'
   | 'failed'

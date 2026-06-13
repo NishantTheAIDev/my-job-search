@@ -3,6 +3,7 @@ import uuid
 
 from fastapi import APIRouter, BackgroundTasks, Depends, HTTPException, Query
 from pydantic import BaseModel
+from sqlalchemy import func
 from sqlmodel import Session, select
 
 from backend.background.tasks import prepare_application_task
@@ -76,10 +77,11 @@ def list_jobs(
     if source or company:
         logger.debug("list_jobs: filtering source=%s company=%s", source, company)
 
-    all_items = session.exec(query).all()
-    total = len(all_items)
+    total = session.exec(
+        select(func.count()).select_from(query.subquery())
+    ).one()
     start = (page - 1) * page_size
-    items = all_items[start : start + page_size]
+    items = session.exec(query.offset(start).limit(page_size)).all()
 
     return JobsListResponse(
         items=[_to_response(p) for p in items],

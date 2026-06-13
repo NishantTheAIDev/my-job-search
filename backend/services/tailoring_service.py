@@ -12,7 +12,7 @@ from backend.services import rendercv_service
 logger = logging.getLogger(__name__)
 
 
-def _compute_diff_json(original: str, tailored: str) -> str:
+def compute_diff_json(original: str, tailored: str) -> str:
     """Compute a unified diff between original and tailored resume as JSON."""
     orig_lines = original.splitlines(keepends=True)
     tail_lines = tailored.splitlines(keepends=True)
@@ -59,9 +59,9 @@ async def tailor_resume(
         tailored = rendercv_service.cv_to_text(cv_dict)
         summary = str(data.get("change_summary", ""))
         gaps = list(data.get("gaps", []))
-        diff_json = _compute_diff_json(resume_text, tailored)
+        diff_json = compute_diff_json(resume_text, tailored)
         return tailored, summary, diff_json, gaps, cv_dict
     except (json.JSONDecodeError, KeyError) as exc:
         logger.warning("tailor: failed to parse LLM response: %s", exc)
-        diff_json = _compute_diff_json(resume_text, resume_text)
+        diff_json = compute_diff_json(resume_text, resume_text)
         return resume_text, "", diff_json, [], {}

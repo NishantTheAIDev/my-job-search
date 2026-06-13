@@ -19,6 +19,7 @@ _ADDITIVE_COLUMNS: dict[str, dict[str, str]] = {
         "prep_error": "VARCHAR NOT NULL DEFAULT ''",
         "resume_data_yaml": "VARCHAR NOT NULL DEFAULT ''",
         "cover_letter_data_yaml": "VARCHAR NOT NULL DEFAULT ''",
+        "tailoring_failed": "BOOLEAN NOT NULL DEFAULT 0",
     },
 }
 
