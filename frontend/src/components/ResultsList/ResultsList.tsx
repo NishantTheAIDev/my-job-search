@@ -1,19 +1,14 @@
 import { useEffect, useRef } from 'react'
 import { useQuery } from '@tanstack/react-query'
 import { getSearchStatus } from '../../api/search'
-import { listJobs, getJobFilters } from '../../api/jobs'
+import { listJobs } from '../../api/jobs'
 import { useJobSearchStore } from '../../store/useJobSearchStore'
 import { LoadingSpinner } from '../shared/LoadingSpinner'
 import { ErrorBanner } from '../shared/ErrorBanner'
 import { EmptyState } from '../shared/EmptyState'
 import { JobCard } from './JobCard'
-import type { JobFiltersResponse } from '../../types'
 
 const PAGE_SIZE = 20
-
-interface ResultsListProps {
-  onFiltersLoaded: (data: JobFiltersResponse) => void
-}
 
 function ChevronLeft() {
   return (
@@ -31,7 +26,7 @@ function ChevronRight() {
   )
 }
 
-export function ResultsList({ onFiltersLoaded }: ResultsListProps) {
+export function ResultsList() {
   const activeSearchJobId = useJobSearchStore((s) => s.activeSearchJobId)
   const criteria = useJobSearchStore((s) => s.criteria)
   const setCriteria = useJobSearchStore((s) => s.setCriteria)
@@ -61,17 +56,6 @@ export function ResultsList({ onFiltersLoaded }: ResultsListProps) {
 
   const isSearchComplete = statusQuery.data?.status === 'complete'
   const isSearchFailed = statusQuery.data?.status === 'failed'
-
-  const filtersQuery = useQuery({
-    queryKey: ['jobFilters', activeSearchJobId],
-    queryFn: () => getJobFilters(activeSearchJobId!),
-    enabled: isSearchComplete && !!activeSearchJobId,
-  })
-
-  useEffect(() => {
-    if (filtersQuery.data) onFiltersLoaded(filtersQuery.data)
-    // eslint-disable-next-line react-hooks/exhaustive-deps
-  }, [filtersQuery.data])
 
   const jobsQuery = useQuery({
     queryKey: ['jobs', activeSearchJobId, page, selectedSources, selectedCompanies],

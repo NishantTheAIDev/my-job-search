@@ -2,13 +2,14 @@ import { useState } from 'react'
 import { useQuery } from '@tanstack/react-query'
 import { useJobSearchStore } from '../../store/useJobSearchStore'
 import { getInsights } from '../../api/insights'
-import type { InsightsRegion } from '../../types'
+import type { InsightsRegion, Insights } from '../../types'
 import { ErrorBanner } from '../shared/ErrorBanner'
 import { Logo } from '../shared/Logo'
 import { MarketNews } from './MarketNews'
 import { SalaryTable } from './SalaryTable'
 import { HotFields } from './HotFields'
 import { HiringTrends } from './HiringTrends'
+import { formatSalary, formatNumber } from './currencyUtils'
 
 // ── Region config ─────────────────────────────────────────────────────────────
 
@@ -25,18 +26,162 @@ const REGIONS: RegionOption[] = [
   { value: 'world', label: 'Worldwide', flag: '🌍' },
 ]
 
-// ── Skeleton for loading ──────────────────────────────────────────────────────
+// ── KPI derivation helpers ────────────────────────────────────────────────────
 
-function InsightsSkeleton() {
+interface KpiStat {
+  label: string
+  value: string
+  sub?: string
+  icon: React.ReactNode
+  trend?: 'up' | 'down' | 'neutral'
+}
+
+function deriveKpis(data: Insights, region: InsightsRegion): KpiStat[] {
+  const stats: KpiStat[] = []
+
+  // 1. Total openings across all hottest fields
+  const totalOpenings =
+    data.hottest_fields.length > 0
+      ? data.hottest_fields.reduce((sum, f) => sum + f.openings, 0)
+      : null
+
+  stats.push({
+    label: 'Total Openings',
+    value: totalOpenings != null ? formatNumber(totalOpenings) : '—',
+    sub: 'across tracked fields',
+    icon: (
+      <svg className="h-4 w-4" fill="none" stroke="currentColor" strokeWidth={1.75} viewBox="0 0 24 24" aria-hidden="true">
+        <path strokeLinecap="round" strokeLinejoin="round" d="M20.25 14.15v4.25c0 1.094-.787 2.036-1.872 2.18-2.087.277-4.216.42-6.378.42s-4.291-.143-6.378-.42c-1.085-.144-1.872-1.086-1.872-2.18v-4.25m16.5 0a2.18 2.18 0 0 0 .75-1.661V8.706c0-1.081-.768-2.015-1.837-2.175a48.114 48.114 0 0 0-3.413-.387m4.5 8.006c-.194.165-.42.295-.673.38A23.978 23.978 0 0 1 12 15.75c-2.648 0-5.195-.429-7.577-1.22a2.016 2.016 0 0 1-.673-.38m0 0A2.18 2.18 0 0 1 3 12.489V8.706c0-1.081.768-2.015 1.837-2.175a48.111 48.111 0 0 1 3.413-.387m7.5 0V5.25A2.25 2.25 0 0 0 13.5 3h-3a2.25 2.25 0 0 0-2.25 2.25v.894m7.5 0a48.667 48.667 0 0 0-7.5 0M12 12.75h.008v.008H12v-.008Z" />
+      </svg>
+    ),
+  })
+
+  // 2. Top field by openings
+  const topField =
+    data.hottest_fields.length > 0
+      ? data.hottest_fields.reduce((a, b) => (b.openings > a.openings ? b : a))
+      : null
+
+  stats.push({
+    label: 'Hottest Field',
+    value: topField ? topField.label : '—',
+    sub: topField ? `${formatNumber(topField.openings)} openings` : 'no data',
+    icon: (
+      <svg className="h-4 w-4" fill="none" stroke="currentColor" strokeWidth={1.75} viewBox="0 0 24 24" aria-hidden="true">
+        <path strokeLinecap="round" strokeLinejoin="round" d="M15.59 14.37a6 6 0 0 1-5.84 7.38v-4.8m5.84-2.58a14.98 14.98 0 0 0 6.16-12.12A14.98 14.98 0 0 0 9.631 8.41m5.96 5.96a14.926 14.926 0 0 1-5.841 2.58m-.119-8.54a6 6 0 0 0-7.381 5.84h4.8m2.581-5.84a14.927 14.927 0 0 0-2.58 5.84m2.699 2.7c-.103.021-.207.041-.311.06a15.09 15.09 0 0 1-2.448-2.448 14.9 14.9 0 0 1 .06-.312m-2.24 2.39a4.493 4.493 0 0 0-1.757 4.306 4.493 4.493 0 0 0 4.306-1.758M16.5 9a1.5 1.5 0 1 1-3 0 1.5 1.5 0 0 1 3 0Z" />
+      </svg>
+    ),
+  })
+
+  // 3. Median salary from first salary entry with a non-null value
+  const firstSalary =
+    data.salaries.find((s) => s.median != null) ?? null
+
+  stats.push({
+    label: 'Median Salary',
+    value: firstSalary
+      ? formatSalary(firstSalary.median, region, firstSalary.currency)
+      : '—',
+    sub: firstSalary ? firstSalary.role : 'no data',
+    icon: (
+      <svg className="h-4 w-4" fill="none" stroke="currentColor" strokeWidth={1.75} viewBox="0 0 24 24" aria-hidden="true">
+        <path strokeLinecap="round" strokeLinejoin="round" d="M12 6v12m-3-2.818.879.659c1.171.879 3.07.879 4.242 0 1.172-.879 1.172-2.303 0-3.182C13.536 12.219 12.768 12 12 12c-.725 0-1.45-.22-2.003-.659-1.106-.879-1.106-2.303 0-3.182s2.9-.879 4.006 0l.415.33M21 12a9 9 0 1 1-18 0 9 9 0 0 1 18 0Z" />
+      </svg>
+    ),
+  })
+
+  // 4. Salary trend direction (latest vs previous point in salary_history)
+  const salaryHistory = data.trends.salary_history
+  let trendValue = '—'
+  let trendDir: 'up' | 'down' | 'neutral' = 'neutral'
+  let trendSub = 'no trend data'
+
+  if (salaryHistory.length >= 2) {
+    const latest = salaryHistory[salaryHistory.length - 1].value
+    const prev = salaryHistory[salaryHistory.length - 2].value
+    const pctChange = prev !== 0 ? ((latest - prev) / prev) * 100 : 0
+    trendDir = pctChange > 0 ? 'up' : pctChange < 0 ? 'down' : 'neutral'
+    trendValue = `${pctChange >= 0 ? '+' : ''}${pctChange.toFixed(1)}%`
+    trendSub = `vs ${salaryHistory[salaryHistory.length - 2].period?.slice(0, 7) ?? 'previous'}`
+  } else if (salaryHistory.length === 1) {
+    trendValue = formatSalary(salaryHistory[0].value, region)
+    trendSub = salaryHistory[0].period?.slice(0, 7) ?? 'latest'
+    trendDir = 'neutral'
+  }
+
+  stats.push({
+    label: 'Salary Trend',
+    value: trendValue,
+    sub: trendSub,
+    trend: trendDir,
+    icon: (
+      <svg className="h-4 w-4" fill="none" stroke="currentColor" strokeWidth={1.75} viewBox="0 0 24 24" aria-hidden="true">
+        <path strokeLinecap="round" strokeLinejoin="round" d="M2.25 18 9 11.25l4.306 4.306a11.95 11.95 0 0 1 5.814-5.518l2.74-1.22m0 0-5.94-2.281m5.94 2.28-2.28 5.941" />
+      </svg>
+    ),
+  })
+
+  return stats
+}
+
+// ── KPI Strip ─────────────────────────────────────────────────────────────────
+
+interface KpiCardProps {
+  stat: KpiStat
+}
+
+function KpiCard({ stat }: KpiCardProps) {
+  const trendColor =
+    stat.trend === 'up'
+      ? 'text-emerald-600'
+      : stat.trend === 'down'
+      ? 'text-red-500'
+      : 'text-slate-800'
+
+  const trendIcon =
+    stat.trend === 'up' ? (
+      <svg className="h-3.5 w-3.5 text-emerald-500" fill="none" stroke="currentColor" strokeWidth={2.5} viewBox="0 0 24 24" aria-hidden="true">
+        <path strokeLinecap="round" strokeLinejoin="round" d="M4.5 10.5 12 3m0 0 7.5 7.5M12 3v18" />
+      </svg>
+    ) : stat.trend === 'down' ? (
+      <svg className="h-3.5 w-3.5 text-red-400" fill="none" stroke="currentColor" strokeWidth={2.5} viewBox="0 0 24 24" aria-hidden="true">
+        <path strokeLinecap="round" strokeLinejoin="round" d="M19.5 13.5 12 21m0 0-7.5-7.5M12 21V3" />
+      </svg>
+    ) : null
+
   return (
-    <div className="flex flex-col gap-6" aria-hidden="true">
+    <div className="flex items-start gap-3 rounded-xl border border-slate-200 bg-white px-4 py-4 shadow-[0_1px_3px_0_rgb(0_0_0_/_0.04)] transition hover:shadow-[0_2px_8px_0_rgb(0_0_0_/_0.07)]">
+      <span className="flex h-8 w-8 shrink-0 items-center justify-center rounded-lg bg-indigo-50 text-indigo-600">
+        {stat.icon}
+      </span>
+      <div className="min-w-0 flex-1">
+        <p className="text-[11px] font-medium uppercase tracking-wide text-slate-400">{stat.label}</p>
+        <div className="mt-0.5 flex items-center gap-1.5">
+          <span className={`truncate text-[18px] font-bold leading-tight ${trendColor}`}>
+            {stat.value}
+          </span>
+          {trendIcon}
+        </div>
+        {stat.sub && (
+          <p className="mt-0.5 truncate text-[11px] text-slate-400">{stat.sub}</p>
+        )}
+      </div>
+    </div>
+  )
+}
+
+// ── KPI strip skeleton ────────────────────────────────────────────────────────
+
+function KpiStripSkeleton() {
+  return (
+    <div className="grid grid-cols-2 gap-3 lg:grid-cols-4" aria-hidden="true">
       {[1, 2, 3, 4].map((i) => (
-        <div key={i} className="rounded-xl border border-slate-200 bg-white p-5 shadow-[0_1px_3px_0_rgb(0_0_0_/_0.04)]">
-          <div className="mb-4 h-4 w-32 rounded bg-slate-200 animate-pulse" />
-          <div className="flex flex-col gap-3">
-            {[1, 2, 3].map((j) => (
-              <div key={j} className="h-10 rounded-lg bg-slate-100 animate-pulse" style={{ width: `${70 + j * 8}%` }} />
-            ))}
+        <div key={i} className="flex items-start gap-3 rounded-xl border border-slate-200 bg-white px-4 py-4">
+          <div className="h-8 w-8 shrink-0 rounded-lg bg-slate-100 animate-pulse" />
+          <div className="flex-1 space-y-2">
+            <div className="h-2.5 w-16 rounded bg-slate-100 animate-pulse" />
+            <div className="h-5 w-24 rounded bg-slate-200 animate-pulse" />
+            <div className="h-2 w-20 rounded bg-slate-100 animate-pulse" />
           </div>
         </div>
       ))}
@@ -44,28 +189,129 @@ function InsightsSkeleton() {
   )
 }
 
-// ── Section card wrapper ──────────────────────────────────────────────────────
+// ── Bento grid skeleton ───────────────────────────────────────────────────────
 
-interface SectionProps {
+function BentoGridSkeleton() {
+  return (
+    <div className="grid gap-4 lg:grid-cols-12" aria-hidden="true">
+      {/* Left column */}
+      <div className="flex flex-col gap-4 lg:col-span-5">
+        {/* HotFields card skeleton */}
+        <div className="rounded-xl border border-slate-200 bg-white p-5 shadow-[0_1px_3px_0_rgb(0_0_0_/_0.04)]">
+          <div className="mb-4 h-4 w-28 rounded bg-slate-200 animate-pulse" />
+          <div className="flex flex-col gap-3">
+            {[1, 2, 3, 4].map((j) => (
+              <div key={j} className="h-14 rounded-lg bg-slate-100 animate-pulse" />
+            ))}
+          </div>
+        </div>
+      </div>
+      {/* Right column */}
+      <div className="flex flex-col gap-4 lg:col-span-7">
+        {/* MarketNews card skeleton */}
+        <div className="rounded-xl border border-slate-200 bg-white p-5 shadow-[0_1px_3px_0_rgb(0_0_0_/_0.04)]">
+          <div className="mb-4 h-4 w-28 rounded bg-slate-200 animate-pulse" />
+          <div className="flex flex-col gap-3">
+            {[1, 2, 3].map((j) => (
+              <div key={j} className="h-16 rounded-lg bg-slate-100 animate-pulse" style={{ width: `${70 + j * 8}%` }} />
+            ))}
+          </div>
+        </div>
+        {/* SalaryTable card skeleton */}
+        <div className="rounded-xl border border-slate-200 bg-white p-5 shadow-[0_1px_3px_0_rgb(0_0_0_/_0.04)]">
+          <div className="mb-4 h-4 w-36 rounded bg-slate-200 animate-pulse" />
+          <div className="mb-4 h-10 rounded-lg bg-slate-100 animate-pulse" />
+          <div className="flex flex-col gap-2">
+            {[1, 2, 3].map((j) => (
+              <div key={j} className="h-10 rounded bg-slate-100 animate-pulse" />
+            ))}
+          </div>
+        </div>
+      </div>
+      {/* Hiring Trends — full width at bottom */}
+      <div className="lg:col-span-12">
+        <div className="rounded-xl border border-slate-200 bg-white p-5 shadow-[0_1px_3px_0_rgb(0_0_0_/_0.04)]">
+          <div className="mb-4 h-4 w-28 rounded bg-slate-200 animate-pulse" />
+          <div className="h-40 rounded-lg bg-slate-100 animate-pulse" />
+        </div>
+      </div>
+    </div>
+  )
+}
+
+// ── Full loading skeleton (KPI + bento grid) ──────────────────────────────────
+
+function InsightsSkeleton() {
+  return (
+    <div className="flex flex-col gap-5" aria-hidden="true">
+      <KpiStripSkeleton />
+      <BentoGridSkeleton />
+    </div>
+  )
+}
+
+// ── Bento card wrapper ────────────────────────────────────────────────────────
+
+interface BentoCardProps {
   id: string
   title: string
   icon: React.ReactNode
   children: React.ReactNode
+  /** Extra classes for the card container (e.g. to set a max-height) */
+  className?: string
 }
 
-function Section({ id, title, icon, children }: SectionProps) {
+function BentoCard({ id, title, icon, children, className = '' }: BentoCardProps) {
   return (
-    <section aria-labelledby={id} className="flex flex-col gap-4">
-      <h2 id={id} className="flex items-center gap-2 text-[16px] font-bold text-slate-900">
-        <span className="flex h-8 w-8 shrink-0 items-center justify-center rounded-lg bg-indigo-50 text-indigo-600" aria-hidden="true">
+    <section
+      aria-labelledby={id}
+      className={`flex flex-col rounded-xl border border-slate-200 bg-white shadow-[0_1px_3px_0_rgb(0_0_0_/_0.04)] transition hover:shadow-[0_2px_8px_0_rgb(0_0_0_/_0.07)] ${className}`}
+    >
+      {/* Card header */}
+      <div className="flex items-center gap-2 border-b border-slate-100 px-5 py-4">
+        <span
+          className="flex h-7 w-7 shrink-0 items-center justify-center rounded-lg bg-indigo-50 text-indigo-600"
+          aria-hidden="true"
+        >
           {icon}
         </span>
-        {title}
-      </h2>
-      {children}
+        <h2 id={id} className="text-[14px] font-bold text-slate-900">
+          {title}
+        </h2>
+      </div>
+      {/* Card body */}
+      <div className="flex-1 overflow-hidden p-5">
+        {children}
+      </div>
     </section>
   )
 }
+
+// ── Icon definitions (extracted to avoid repetition) ─────────────────────────
+
+const NewsIcon = (
+  <svg className="h-3.5 w-3.5" fill="none" stroke="currentColor" strokeWidth={1.75} viewBox="0 0 24 24" aria-hidden="true">
+    <path strokeLinecap="round" strokeLinejoin="round" d="M12 7.5h1.5m-1.5 3h1.5m-7.5 3h7.5m-7.5 3h7.5m3-9h3.375c.621 0 1.125.504 1.125 1.125V18a2.25 2.25 0 0 1-2.25 2.25M16.5 7.5V18a2.25 2.25 0 0 0 2.25 2.25M16.5 7.5V4.875c0-.621-.504-1.125-1.125-1.125H4.125C3.504 3.75 3 4.254 3 4.875V18a2.25 2.25 0 0 0 2.25 2.25h13.5M6 7.5h3v3H6v-3Z" />
+  </svg>
+)
+
+const HotIcon = (
+  <svg className="h-3.5 w-3.5" fill="none" stroke="currentColor" strokeWidth={1.75} viewBox="0 0 24 24" aria-hidden="true">
+    <path strokeLinecap="round" strokeLinejoin="round" d="M15.59 14.37a6 6 0 0 1-5.84 7.38v-4.8m5.84-2.58a14.98 14.98 0 0 0 6.16-12.12A14.98 14.98 0 0 0 9.631 8.41m5.96 5.96a14.926 14.926 0 0 1-5.841 2.58m-.119-8.54a6 6 0 0 0-7.381 5.84h4.8m2.581-5.84a14.927 14.927 0 0 0-2.58 5.84m2.699 2.7c-.103.021-.207.041-.311.06a15.09 15.09 0 0 1-2.448-2.448 14.9 14.9 0 0 1 .06-.312m-2.24 2.39a4.493 4.493 0 0 0-1.757 4.306 4.493 4.493 0 0 0 4.306-1.758M16.5 9a1.5 1.5 0 1 1-3 0 1.5 1.5 0 0 1 3 0Z" />
+  </svg>
+)
+
+const SalaryIcon = (
+  <svg className="h-3.5 w-3.5" fill="none" stroke="currentColor" strokeWidth={1.75} viewBox="0 0 24 24" aria-hidden="true">
+    <path strokeLinecap="round" strokeLinejoin="round" d="M12 6v12m-3-2.818.879.659c1.171.879 3.07.879 4.242 0 1.172-.879 1.172-2.303 0-3.182C13.536 12.219 12.768 12 12 12c-.725 0-1.45-.22-2.003-.659-1.106-.879-1.106-2.303 0-3.182s2.9-.879 4.006 0l.415.33M21 12a9 9 0 1 1-18 0 9 9 0 0 1 18 0Z" />
+  </svg>
+)
+
+const TrendsIcon = (
+  <svg className="h-3.5 w-3.5" fill="none" stroke="currentColor" strokeWidth={1.75} viewBox="0 0 24 24" aria-hidden="true">
+    <path strokeLinecap="round" strokeLinejoin="round" d="M2.25 18 9 11.25l4.306 4.306a11.95 11.95 0 0 1 5.814-5.518l2.74-1.22m0 0-5.94-2.281m5.94 2.28-2.28 5.941" />
+  </svg>
+)
 
 // ── Main page ─────────────────────────────────────────────────────────────────
 
@@ -101,6 +347,8 @@ export function InsightsPage() {
         }
       })()
     : null
+
+  const kpis = data ? deriveKpis(data, region) : []
 
   return (
     <div className="flex h-full flex-col bg-slate-50">
@@ -166,7 +414,7 @@ export function InsightsPage() {
 
       {/* Page body */}
       <main id="insights-main" className="flex-1 overflow-y-auto">
-        <div className="mx-auto max-w-4xl px-4 py-6 sm:px-6">
+        <div className="mx-auto max-w-7xl px-4 py-5 sm:px-6">
           {isLoading ? (
             <InsightsSkeleton />
           ) : error ? (
@@ -177,58 +425,65 @@ export function InsightsPage() {
               />
             </div>
           ) : data ? (
-            <div className="flex flex-col gap-10">
-              {/* Market News */}
-              <Section
-                id="news-heading"
-                title="Market News"
-                icon={
-                  <svg className="h-4 w-4" fill="none" stroke="currentColor" strokeWidth={1.75} viewBox="0 0 24 24" aria-hidden="true">
-                    <path strokeLinecap="round" strokeLinejoin="round" d="M12 7.5h1.5m-1.5 3h1.5m-7.5 3h7.5m-7.5 3h7.5m3-9h3.375c.621 0 1.125.504 1.125 1.125V18a2.25 2.25 0 0 1-2.25 2.25M16.5 7.5V18a2.25 2.25 0 0 0 2.25 2.25M16.5 7.5V4.875c0-.621-.504-1.125-1.125-1.125H4.125C3.504 3.75 3 4.254 3 4.875V18a2.25 2.25 0 0 0 2.25 2.25h13.5M6 7.5h3v3H6v-3Z" />
-                  </svg>
-                }
-              >
-                <MarketNews news={data.news} />
-              </Section>
+            <div className="flex flex-col gap-5">
+              {/* ── KPI stat strip ──────────────────────────────────────────── */}
+              <div className="grid grid-cols-2 gap-3 lg:grid-cols-4" aria-label="Key market statistics">
+                {kpis.map((stat) => (
+                  <KpiCard key={stat.label} stat={stat} />
+                ))}
+              </div>
 
-              {/* Hottest Fields */}
-              <Section
-                id="hotfields-heading"
-                title="Hottest Fields"
-                icon={
-                  <svg className="h-4 w-4" fill="none" stroke="currentColor" strokeWidth={1.75} viewBox="0 0 24 24" aria-hidden="true">
-                    <path strokeLinecap="round" strokeLinejoin="round" d="M15.59 14.37a6 6 0 0 1-5.84 7.38v-4.8m5.84-2.58a14.98 14.98 0 0 0 6.16-12.12A14.98 14.98 0 0 0 9.631 8.41m5.96 5.96a14.926 14.926 0 0 1-5.841 2.58m-.119-8.54a6 6 0 0 0-7.381 5.84h4.8m2.581-5.84a14.927 14.927 0 0 0-2.58 5.84m2.699 2.7c-.103.021-.207.041-.311.06a15.09 15.09 0 0 1-2.448-2.448 14.9 14.9 0 0 1 .06-.312m-2.24 2.39a4.493 4.493 0 0 0-1.757 4.306 4.493 4.493 0 0 0 4.306-1.758M16.5 9a1.5 1.5 0 1 1-3 0 1.5 1.5 0 0 1 3 0Z" />
-                  </svg>
-                }
-              >
-                <HotFields fields={data.hottest_fields} region={region} />
-              </Section>
+              {/* ── Bento grid ──────────────────────────────────────────────── */}
+              <div className="grid gap-4 lg:grid-cols-12">
+                {/* Left column: Hottest Fields */}
+                <div className="lg:col-span-5">
+                  <BentoCard
+                    id="hotfields-heading"
+                    title="Hottest Fields"
+                    icon={HotIcon}
+                    className="h-full"
+                  >
+                    {/* Internal scroll so the list doesn't blow out the grid row */}
+                    <div className="max-h-[480px] overflow-y-auto pr-1">
+                      <HotFields fields={data.hottest_fields} region={region} />
+                    </div>
+                  </BentoCard>
+                </div>
 
-              {/* Salary Benchmarks */}
-              <Section
-                id="salary-heading"
-                title="Salary Benchmarks"
-                icon={
-                  <svg className="h-4 w-4" fill="none" stroke="currentColor" strokeWidth={1.75} viewBox="0 0 24 24" aria-hidden="true">
-                    <path strokeLinecap="round" strokeLinejoin="round" d="M12 6v12m-3-2.818.879.659c1.171.879 3.07.879 4.242 0 1.172-.879 1.172-2.303 0-3.182C13.536 12.219 12.768 12 12 12c-.725 0-1.45-.22-2.003-.659-1.106-.879-1.106-2.303 0-3.182s2.9-.879 4.006 0l.415.33M21 12a9 9 0 1 1-18 0 9 9 0 0 1 18 0Z" />
-                  </svg>
-                }
-              >
-                <SalaryTable salaries={data.salaries} region={region} />
-              </Section>
+                {/* Right column: Market News on top, Salary Benchmarks below */}
+                <div className="flex flex-col gap-4 lg:col-span-7">
+                  <BentoCard
+                    id="news-heading"
+                    title="Market News"
+                    icon={NewsIcon}
+                  >
+                    <div className="max-h-[220px] overflow-y-auto pr-1">
+                      <MarketNews news={data.news} />
+                    </div>
+                  </BentoCard>
 
-              {/* Hiring Trends */}
-              <Section
-                id="trends-heading"
-                title="Hiring Trends"
-                icon={
-                  <svg className="h-4 w-4" fill="none" stroke="currentColor" strokeWidth={1.75} viewBox="0 0 24 24" aria-hidden="true">
-                    <path strokeLinecap="round" strokeLinejoin="round" d="M2.25 18 9 11.25l4.306 4.306a11.95 11.95 0 0 1 5.814-5.518l2.74-1.22m0 0-5.94-2.281m5.94 2.28-2.28 5.941" />
-                  </svg>
-                }
-              >
-                <HiringTrends trends={data.trends} region={region} />
-              </Section>
+                  <BentoCard
+                    id="salary-heading"
+                    title="Salary Benchmarks"
+                    icon={SalaryIcon}
+                  >
+                    <div className="max-h-[240px] overflow-y-auto pr-1">
+                      <SalaryTable salaries={data.salaries} region={region} />
+                    </div>
+                  </BentoCard>
+                </div>
+
+                {/* Bottom row: Hiring Trends spans full width */}
+                <div className="lg:col-span-12">
+                  <BentoCard
+                    id="trends-heading"
+                    title="Hiring Trends"
+                    icon={TrendsIcon}
+                  >
+                    <HiringTrends trends={data.trends} region={region} />
+                  </BentoCard>
+                </div>
+              </div>
             </div>
           ) : null}
         </div>

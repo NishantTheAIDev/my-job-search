@@ -1,30 +1,49 @@
-import { useEffect, useState } from 'react'
+import { useQuery } from '@tanstack/react-query'
 import { useJobSearchStore } from '../../store/useJobSearchStore'
+import { getSearchStatus } from '../../api/search'
+import { getJobFilters } from '../../api/jobs'
 import { Logo } from '../shared/Logo'
 import { SearchBar } from '../shared/SearchBar'
 import { ResumeUpload } from '../shared/ResumeUpload'
 import { ResultsList } from '../ResultsList/ResultsList'
 import { FiltersPanel } from './FiltersPanel'
+import { ErrorBoundary } from '../shared/ErrorBoundary'
 import { hasFilters } from '../../lib/constants'
-import type { JobFiltersResponse } from '../../types'
 
 export function ResultsView() {
   const activeSearchJobId = useJobSearchStore((s) => s.activeSearchJobId)
   const resetToLanding = useJobSearchStore((s) => s.resetToLanding)
   const setShowInsights = useJobSearchStore((s) => s.setShowInsights)
+  const selectedSources = useJobSearchStore((s) => s.selectedSources)
+  const selectedCompanies = useJobSearchStore((s) => s.selectedCompanies)
 
-  const [filtersData, setFiltersData] = useState<JobFiltersResponse | null>(null)
+  // Derive filter options straight from the TanStack Query cache (shared with
+  // ResultsList via the same query keys). Reading from the cache rather than
+  // holding local state means the filter rail survives this view unmounting and
+  // remounting — e.g. a round trip through Market Insights — instead of vanishing.
+  const statusQuery = useQuery({
+    queryKey: ['searchStatus', activeSearchJobId],
+    queryFn: () => getSearchStatus(activeSearchJobId!),
+    enabled: !!activeSearchJobId,
+  })
+  const isSearchComplete = statusQuery.data?.status === 'complete'
 
-  // Reset the cached filter options whenever a new search starts.
-  useEffect(() => {
-    // eslint-disable-next-line react-hooks/set-state-in-effect
-    setFiltersData(null)
-  }, [activeSearchJobId])
+  const filtersQuery = useQuery({
+    queryKey: ['jobFilters', activeSearchJobId],
+    queryFn: () => getJobFilters(activeSearchJobId!),
+    enabled: isSearchComplete && !!activeSearchJobId,
+  })
+  const filtersData = filtersQuery.data ?? null
 
   const showRail = hasFilters(filtersData)
 
   return (
-    <div className="flex h-full flex-col bg-slate-50">
+    // Pinned to the viewport (not just `h-full`) so this full-height layout never
+    // contributes scroll height to the App's scrollable root. Otherwise, when the
+    // filter rail expands ("Show all"), ResultsView can transiently overflow the
+    // root, which then scrolls (via scroll anchoring) and leaves a blank viewport
+    // until a reflow — the internal <aside>/<main> own all scrolling here.
+    <div className="fixed inset-0 flex flex-col bg-slate-50">
       {/* Top bar: brand + live search + resume status */}
       <header className="sticky top-0 z-30 flex h-16 items-center gap-3 border-b border-slate-200 bg-white px-4 shadow-[0_1px_3px_0_rgb(0_0_0_/_0.06)] sm:px-5">
         <div className="hidden shrink-0 md:block">
@@ -55,13 +74,15 @@ export function ResultsView() {
       {/* Body */}
       <div className="flex min-h-0 flex-1 overflow-hidden">
         {showRail && (
-          <aside className="hidden w-64 shrink-0 overflow-y-auto border-r border-slate-200 bg-white px-4 py-5 lg:block">
+          <aside className="hidden w-64 shrink-0 overflow-y-auto overscroll-contain border-r border-slate-200 bg-white px-4 py-5 lg:block">
             <FiltersPanel filtersData={filtersData} />
           </aside>
         )}
-        <main id="results-col" className="min-w-0 flex-1 overflow-y-auto">
+        <main id="results-col" className="min-w-0 flex-1 overflow-y-auto overscroll-contain">
           <div className="mx-auto max-w-3xl px-4 py-5 sm:px-6">
-            <ResultsList onFiltersLoaded={setFiltersData} />
+            <ErrorBoundary label="ResultsList" resetKeys={[activeSearchJobId, selectedSources, selectedCompanies]}>
+              <ResultsList />
+            </ErrorBoundary>
           </div>
         </main>
       </div>

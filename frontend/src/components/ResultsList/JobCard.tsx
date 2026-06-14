@@ -4,6 +4,7 @@ import type { AxiosError } from 'axios'
 import { prepareApplication } from '../../api/jobs'
 import { useJobSearchStore } from '../../store/useJobSearchStore'
 import { ScoreBadge } from './ScoreBadge'
+import { formatPostedDate } from '../../lib/date'
 import type { JobPosting } from '../../types'
 
 interface JobCardProps {
@@ -152,14 +153,8 @@ export function JobCard({ job, onShowDetail, isSelected = false }: JobCardProps)
                   {job.compensation}
                 </span>
               )}
-              {job.posted_date && (
-                <span>
-                  {new Date(job.posted_date).toLocaleDateString(undefined, {
-                    month: 'short',
-                    day: 'numeric',
-                    year: 'numeric',
-                  })}
-                </span>
+              {formatPostedDate(job.posted_date) && (
+                <span>{formatPostedDate(job.posted_date)}</span>
               )}
               <span className="ml-auto rounded-full bg-slate-100 px-1.5 py-0.5 font-medium text-slate-400">
                 {job.source}
