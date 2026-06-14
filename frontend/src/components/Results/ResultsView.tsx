@@ -11,6 +11,7 @@ import type { JobFiltersResponse } from '../../types'
 export function ResultsView() {
   const activeSearchJobId = useJobSearchStore((s) => s.activeSearchJobId)
   const resetToLanding = useJobSearchStore((s) => s.resetToLanding)
+  const setShowInsights = useJobSearchStore((s) => s.setShowInsights)
 
   const [filtersData, setFiltersData] = useState<JobFiltersResponse | null>(null)
 
@@ -33,6 +34,16 @@ export function ResultsView() {
           <SearchBar variant="compact" />
         </div>
         <ResumeUpload variant="inline" />
+        <button
+          onClick={() => setShowInsights(true)}
+          className="hidden shrink-0 items-center gap-1.5 rounded-lg border border-slate-200 px-3 py-2 text-[12px] font-medium text-slate-600 transition hover:border-indigo-300 hover:bg-indigo-50 hover:text-indigo-700 focus:outline-none focus:ring-2 focus:ring-indigo-500 sm:inline-flex"
+          aria-label="View job market insights"
+        >
+          <svg className="h-3.5 w-3.5" fill="none" stroke="currentColor" strokeWidth={2} viewBox="0 0 24 24" aria-hidden="true">
+            <path strokeLinecap="round" strokeLinejoin="round" d="M2.25 18 9 11.25l4.306 4.306a11.95 11.95 0 0 1 5.814-5.518l2.74-1.22m0 0-5.94-2.281m5.94 2.28-2.28 5.941" />
+          </svg>
+          Market Insights
+        </button>
         <button
           onClick={resetToLanding}
           className="hidden shrink-0 items-center gap-1 rounded-lg border border-slate-200 px-3 py-2 text-[12px] font-medium text-slate-600 transition hover:border-slate-300 hover:bg-slate-50 focus:outline-none focus:ring-2 focus:ring-indigo-500 sm:inline-flex"

@@ -140,7 +140,7 @@ class IndeedAdapter(JobBoardAdapter):
 
         if criteria.remote_only:
             filters = (
-                'filters: { composite: { filters: ['
+                "filters: { composite: { filters: ["
                 '{ keyword: { field: "attributes", keys: ["DSQF7"] } }] } }'
             )
         else:

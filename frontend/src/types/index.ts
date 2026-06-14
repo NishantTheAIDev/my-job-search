@@ -96,3 +96,51 @@ export interface PrepareApplicationResponse {
   status: string
   job_id: string
 }
+
+// ── Insights ──────────────────────────────────────────────────────────────────
+
+export type InsightsRegion = 'in' | 'us' | 'gb' | 'world'
+
+export interface NewsItem {
+  title: string
+  url: string
+  domain: string
+  seendate: string // GDELT format: YYYYMMDDThhmmssZ
+}
+
+export interface SalaryStat {
+  role: string
+  median: number | null
+  currency: string
+  sample_size: number
+}
+
+export interface HotField {
+  label: string
+  tag: string
+  openings: number
+  mean_salary: number | null
+  currency: string
+}
+
+export interface TrendPoint {
+  period?: string  // salary_history: "YYYY-MM"
+  year?: number    // unemployment / employment
+  value: number
+}
+
+export interface TrendData {
+  salary_history: TrendPoint[]
+  unemployment: TrendPoint[]
+  employment: TrendPoint[]
+}
+
+export interface Insights {
+  region: InsightsRegion
+  currency: string
+  generated_at: string // ISO 8601
+  news: NewsItem[]
+  salaries: SalaryStat[]
+  hottest_fields: HotField[]
+  trends: TrendData
+}

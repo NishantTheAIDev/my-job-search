@@ -1,0 +1,7 @@
+{
+  "results": [
+    {"tag": "it-jobs", "label": "IT Jobs"},
+    {"tag": "engineering-jobs", "label": "Engineering Jobs"},
+    {"tag": "accounting-finance-jobs", "label": "Accounting & Finance Jobs"}
+  ]
+}

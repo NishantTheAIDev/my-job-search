@@ -19,6 +19,9 @@ class Settings(BaseSettings):
     # Comma-separated list of allowed CORS origins
     cors_origins: list[str] = ["http://localhost:5173"]
     rendercv_theme: str = "engineeringresumes"
+    worldbank_enabled: bool = True
+    news_enabled: bool = True  # Google News RSS (+ Hacker News fallback); both keyless
+    insights_cache_ttl_hours: int = 24
 
 
 settings = Settings()
