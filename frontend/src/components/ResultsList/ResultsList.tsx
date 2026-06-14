@@ -1,4 +1,4 @@
-import { useEffect, useRef } from 'react'
+import { useEffect, useRef, useState } from 'react'
 import { useQuery } from '@tanstack/react-query'
 import { getSearchStatus } from '../../api/search'
 import { listJobs } from '../../api/jobs'
@@ -36,8 +36,13 @@ export function ResultsList() {
   const setSelectedJob = useJobSearchStore((s) => s.setSelectedJob)
   const page = criteria.page ?? 1
 
+  // Local ephemeral state — mirrors how source/company filters are handled.
+  // Reset when the active search changes so a new search starts filtered.
+  const [showLowRelevance, setShowLowRelevance] = useState(false)
+
   useEffect(() => {
     setSelectedJob(null)
+    setShowLowRelevance(false)
   }, [activeSearchJobId, setSelectedJob])
 
   useEffect(() => {
@@ -58,12 +63,13 @@ export function ResultsList() {
   const isSearchFailed = statusQuery.data?.status === 'failed'
 
   const jobsQuery = useQuery({
-    queryKey: ['jobs', activeSearchJobId, page, selectedSources, selectedCompanies],
+    queryKey: ['jobs', activeSearchJobId, page, selectedSources, selectedCompanies, showLowRelevance],
     queryFn: () =>
       listJobs({
         search_job_id: activeSearchJobId!,
         page,
         page_size: PAGE_SIZE,
+        min_relevance: showLowRelevance ? 0 : undefined,
         source: selectedSources.length ? selectedSources : undefined,
         company: selectedCompanies.length ? selectedCompanies : undefined,
       }),
@@ -144,7 +150,11 @@ export function ResultsList() {
       <div className="p-5">
         <EmptyState
           title="No jobs found"
-          description="No results matched your search. Try different keywords, remove filters, or expand your location."
+          description={
+            !showLowRelevance
+              ? 'No relevant results matched your search. Try enabling "Show low-relevance" above, remove filters, or search with different keywords.'
+              : 'No results matched your search. Try different keywords, remove filters, or expand your location.'
+          }
         />
       </div>
     )
@@ -155,7 +165,7 @@ export function ResultsList() {
       <p aria-live="polite" aria-atomic="true" className="sr-only" ref={liveRef} />
 
       {/* Results header */}
-      <div className="sticky top-0 z-10 flex items-center justify-between border-b border-slate-100 bg-white px-4 py-2.5">
+      <div className="sticky top-0 z-10 flex items-center justify-between gap-3 border-b border-slate-100 bg-white px-4 py-2.5">
         <div className="flex items-baseline gap-1.5">
           <span className="text-[13px] font-semibold text-slate-800">{total}</span>
           <span className="text-[12px] text-slate-500">jobs found</span>
@@ -165,11 +175,40 @@ export function ResultsList() {
             </span>
           )}
         </div>
-        {totalPages > 1 && (
-          <span className="text-[11px] text-slate-400">
-            Page {page} of {totalPages}
-          </span>
-        )}
+        <div className="flex items-center gap-3">
+          <label className="flex cursor-pointer items-center gap-1.5 select-none">
+            <div
+              role="checkbox"
+              aria-checked={showLowRelevance}
+              tabIndex={0}
+              onClick={() => setShowLowRelevance((v) => !v)}
+              onKeyDown={(e) => {
+                if (e.key === 'Enter' || e.key === ' ') {
+                  e.preventDefault()
+                  setShowLowRelevance((v) => !v)
+                }
+              }}
+              className={`flex h-4 w-4 shrink-0 items-center justify-center rounded border transition focus:outline-none focus:ring-2 focus:ring-indigo-500 focus:ring-offset-1 ${
+                showLowRelevance
+                  ? 'border-indigo-500 bg-indigo-500 text-white'
+                  : 'border-slate-300 bg-white'
+              }`}
+              aria-label="Show low-relevance results"
+            >
+              {showLowRelevance && (
+                <svg className="h-2.5 w-2.5" viewBox="0 0 10 10" fill="none" stroke="currentColor" strokeWidth={2.5} aria-hidden="true">
+                  <path strokeLinecap="round" strokeLinejoin="round" d="M1.5 5l2.5 2.5 5-5" />
+                </svg>
+              )}
+            </div>
+            <span className="text-[11px] text-slate-500">Show low-relevance</span>
+          </label>
+          {totalPages > 1 && (
+            <span className="text-[11px] text-slate-400">
+              Page {page} of {totalPages}
+            </span>
+          )}
+        </div>
       </div>
 
       {/* Job list */}

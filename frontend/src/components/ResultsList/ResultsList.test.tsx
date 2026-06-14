@@ -33,6 +33,7 @@ const sampleJob: JobPosting = {
   compensation: '$150k–$180k',
   posted_date: '2026-05-20',
   match_score: 85,
+  relevance_score: 72,
 }
 
 beforeEach(() => {

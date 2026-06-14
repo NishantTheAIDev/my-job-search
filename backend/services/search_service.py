@@ -10,6 +10,7 @@ from sqlmodel import Session
 from backend.adapters.registry import get_all_adapters
 from backend.models.job_posting import JobPosting, SearchCriteria
 from backend.models.search_job import SearchJob, SearchJobStatus
+from backend.services.relevance import score_relevance
 
 logger = logging.getLogger(__name__)
 
@@ -79,6 +80,9 @@ async def run_search(
 
         for posting in deduped:
             posting.search_job_id = search_job_id
+            posting.relevance_score = score_relevance(
+                posting.title, posting.description, criteria.query
+            )
             session.add(posting)
 
         job.status = SearchJobStatus.complete

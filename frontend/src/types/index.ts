@@ -37,6 +37,7 @@ export interface JobPosting {
   compensation: string | null
   posted_date: string | null
   match_score: number | null
+  relevance_score: number | null
 }
 
 export interface JobsListResponse {

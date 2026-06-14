@@ -23,6 +23,10 @@ _ADDITIVE_COLUMNS: dict[str, dict[str, str]] = {
         "match_gaps": "VARCHAR NOT NULL DEFAULT '[]'",
         "saved_at": "DATETIME",
     },
+    "jobposting": {
+        # Phase 1 relevance scoring — nullable, so no NOT NULL/default needed.
+        "relevance_score": "INTEGER",
+    },
 }
 
 

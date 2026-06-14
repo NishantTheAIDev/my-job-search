@@ -156,8 +156,19 @@ export function JobCard({ job, onShowDetail, isSelected = false }: JobCardProps)
               {formatPostedDate(job.posted_date) && (
                 <span>{formatPostedDate(job.posted_date)}</span>
               )}
-              <span className="ml-auto rounded-full bg-slate-100 px-1.5 py-0.5 font-medium text-slate-400">
-                {job.source}
+              <span className="ml-auto flex items-center gap-1.5">
+                {job.relevance_score != null && (
+                  <span
+                    className="rounded-full bg-slate-100 px-1.5 py-0.5 font-medium text-slate-400"
+                    title={`Relevance score: ${job.relevance_score}/100`}
+                    aria-label={`Relevance: ${job.relevance_score}`}
+                  >
+                    rel {job.relevance_score}
+                  </span>
+                )}
+                <span className="rounded-full bg-slate-100 px-1.5 py-0.5 font-medium text-slate-400">
+                  {job.source}
+                </span>
               </span>
             </div>
           </div>
