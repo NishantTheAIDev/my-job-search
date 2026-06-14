@@ -1,5 +1,5 @@
 import { api } from './client'
-import type { ApplicationResponse, ApplicationStatus } from '../types'
+import type { ApplicationResponse, ApplicationStatus, SavedApplicationSummary } from '../types'
 
 export async function listApplications(status?: ApplicationStatus): Promise<ApplicationResponse[]> {
   const params = status ? { status } : undefined
@@ -29,6 +29,16 @@ export async function approveApplication(id: string): Promise<ApplicationRespons
 
 export async function rejectApplication(id: string): Promise<ApplicationResponse> {
   const response = await api.post<ApplicationResponse>(`/applications/${id}/reject`)
+  return response.data
+}
+
+export async function saveApplication(id: string): Promise<ApplicationResponse> {
+  const response = await api.post<ApplicationResponse>(`/applications/${id}/save`)
+  return response.data
+}
+
+export async function listSavedApplications(): Promise<SavedApplicationSummary[]> {
+  const response = await api.get<SavedApplicationSummary[]>('/applications/saved')
   return response.data
 }
 

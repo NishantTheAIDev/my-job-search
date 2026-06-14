@@ -6,6 +6,8 @@ import { JobDetailSlideOver } from './components/Results/JobDetailSlideOver'
 import { ResumeEditor } from './components/ResumeEditor/ResumeEditor'
 import { ApprovalScreen } from './components/ApprovalScreen/ApprovalScreen'
 import { InsightsPage } from './components/Insights/InsightsPage'
+import { PasteJDPage } from './components/PasteJD/PasteJDPage'
+import { SavedApplicationsPage } from './components/SavedApplications/SavedApplicationsPage'
 
 const queryClient = new QueryClient({
   defaultOptions: {
@@ -21,6 +23,27 @@ function AppLayout() {
   const activeApplicationId = useJobSearchStore((s) => s.activeApplicationId)
   const showApproval = useJobSearchStore((s) => s.showApproval)
   const showInsights = useJobSearchStore((s) => s.showInsights)
+  const showPasteJd = useJobSearchStore((s) => s.showPasteJd)
+  const showSavedApplications = useJobSearchStore((s) => s.showSavedApplications)
+
+  // Full-page overlays — ordered by priority (showApproval must outrank showPasteJd
+  // so the paste→approval transition works: PasteJDPage sets showPasteJd=false and
+  // showApproval=true in a single action, and the approval screen is immediately shown).
+  if (showPasteJd) {
+    return (
+      <div className="fixed inset-0 overflow-hidden bg-slate-50 font-sans">
+        <PasteJDPage />
+      </div>
+    )
+  }
+
+  if (showSavedApplications) {
+    return (
+      <div className="fixed inset-0 overflow-hidden bg-slate-50 font-sans">
+        <SavedApplicationsPage />
+      </div>
+    )
+  }
 
   // Insights view takes over the whole page when active
   if (showInsights) {

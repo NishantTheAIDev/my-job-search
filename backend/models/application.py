@@ -15,6 +15,9 @@ class ApplicationStatus(StrEnum):
     rejected = "rejected"
     submitted = "submitted"
     failed = "failed"
+    # Terminal status reached only via save_application(). Represents "keep this tailored
+    # result for reference" without submitting to any board.
+    saved = "saved"
 
 
 class Application(SQLModel, table=True):
@@ -31,8 +34,10 @@ class Application(SQLModel, table=True):
     cover_letter_data_yaml: str = ""
     match_score: int = 0
     match_rationale: str = ""
+    match_gaps: str = "[]"  # JSON-encoded list[str] of skill/experience gaps from the scorer
     tailoring_failed: bool = False
     created_at: datetime = Field(default_factory=lambda: datetime.now(UTC))
     approved_at: datetime | None = None
     submitted_at: datetime | None = None
     rejected_at: datetime | None = None
+    saved_at: datetime | None = None

@@ -11,7 +11,7 @@ vi.mock('../../api/applications')
 vi.mock('../../api/jobs')
 
 const mockGetApplicationByJob = vi.mocked(applicationsApi.getApplicationByJob)
-const mockApproveApplication = vi.mocked(applicationsApi.approveApplication)
+const mockSaveApplication = vi.mocked(applicationsApi.saveApplication)
 const mockGetJob = vi.mocked(jobsApi.getJob)
 
 function wrapper({ children }: { children: React.ReactNode }) {
@@ -37,6 +37,8 @@ const sampleApplication: ApplicationResponse = {
   approved_at: null,
   submitted_at: null,
   rejected_at: null,
+  match_gaps: [],
+  saved_at: null,
 }
 
 const sampleJob: JobPosting = {
@@ -69,64 +71,68 @@ describe('ApprovalScreen', () => {
     })
   })
 
-  it('renders Approve & Submit button', async () => {
+  it('renders Approve & Save button', async () => {
     render(<ApprovalScreen />, { wrapper })
     await waitFor(() => {
-      expect(screen.getByRole('button', { name: /approve & submit/i })).toBeInTheDocument()
+      expect(screen.getByRole('button', { name: /approve & save/i })).toBeInTheDocument()
     })
   })
 
-  it('opens confirmation modal on Approve & Submit click', async () => {
+  it('opens confirmation modal on Approve & Save click', async () => {
     const user = userEvent.setup()
     render(<ApprovalScreen />, { wrapper })
-    await waitFor(() => screen.getByRole('button', { name: /approve & submit/i }))
-    await user.click(screen.getByRole('button', { name: /approve & submit/i }))
-    expect(screen.getByRole('dialog', { name: /confirm submission/i })).toBeInTheDocument()
+    await waitFor(() => screen.getByRole('button', { name: /approve & save/i }))
+    await user.click(screen.getByRole('button', { name: /approve & save/i }))
+    expect(screen.getByRole('dialog', { name: /save this application/i })).toBeInTheDocument()
   })
 
   it('Confirm button is disabled while request is in flight', async () => {
     const user = userEvent.setup()
-    // Approval takes a while
-    mockApproveApplication.mockImplementation(
-      () => new Promise((resolve) => setTimeout(() => resolve({ ...sampleApplication, status: 'submitted' as const }), 5000))
+    // Save takes a while
+    mockSaveApplication.mockImplementation(
+      () => new Promise((resolve) => setTimeout(() => resolve({ ...sampleApplication, status: 'saved' as const }), 5000))
     )
 
     render(<ApprovalScreen />, { wrapper })
-    await waitFor(() => screen.getByRole('button', { name: /approve & submit/i }))
-    await user.click(screen.getByRole('button', { name: /approve & submit/i }))
+    await waitFor(() => screen.getByRole('button', { name: /approve & save/i }))
+    await user.click(screen.getByRole('button', { name: /approve & save/i }))
 
-    const confirmBtn = screen.getByRole('button', { name: /confirm/i })
-    await user.click(confirmBtn)
+    // The modal's confirm button text is "Approve & Save"
+    const modalConfirmBtn = screen.getAllByRole('button', { name: /approve & save/i })[1]
+    await user.click(modalConfirmBtn)
 
     // After click, button should be disabled (in-flight)
-    expect(confirmBtn).toBeDisabled()
+    expect(modalConfirmBtn).toBeDisabled()
   })
 
-  it('shows success message after approval', async () => {
+  it('shows success message after save', async () => {
     const user = userEvent.setup()
-    mockApproveApplication.mockResolvedValue({ ...sampleApplication, status: 'submitted' as const })
+    mockSaveApplication.mockResolvedValue({ ...sampleApplication, status: 'saved' as const })
 
     render(<ApprovalScreen />, { wrapper })
-    await waitFor(() => screen.getByRole('button', { name: /approve & submit/i }))
-    await user.click(screen.getByRole('button', { name: /approve & submit/i }))
-    await user.click(screen.getByRole('button', { name: /confirm/i }))
+    await waitFor(() => screen.getByRole('button', { name: /approve & save/i }))
+    await user.click(screen.getByRole('button', { name: /approve & save/i }))
+    // Click the modal confirm button (second one with that name)
+    const confirmBtns = screen.getAllByRole('button', { name: /approve & save/i })
+    await user.click(confirmBtns[confirmBtns.length - 1])
 
     await waitFor(() => {
-      expect(screen.getByText(/application submitted to acme corp/i)).toBeInTheDocument()
+      expect(screen.getByText(/application saved for acme corp/i)).toBeInTheDocument()
     })
   })
 
-  it('shows 409 error message when already submitted', async () => {
+  it('shows 409 error message when already saved', async () => {
     const user = userEvent.setup()
     const error = Object.assign(new Error('Conflict'), {
       response: { status: 409, data: { detail: 'Application already submitted.' } },
     })
-    mockApproveApplication.mockRejectedValue(error)
+    mockSaveApplication.mockRejectedValue(error)
 
     render(<ApprovalScreen />, { wrapper })
-    await waitFor(() => screen.getByRole('button', { name: /approve & submit/i }))
-    await user.click(screen.getByRole('button', { name: /approve & submit/i }))
-    await user.click(screen.getByRole('button', { name: /confirm/i }))
+    await waitFor(() => screen.getByRole('button', { name: /approve & save/i }))
+    await user.click(screen.getByRole('button', { name: /approve & save/i }))
+    const confirmBtns = screen.getAllByRole('button', { name: /approve & save/i })
+    await user.click(confirmBtns[confirmBtns.length - 1])
 
     await waitFor(() => {
       expect(screen.getByText(/application already submitted/i)).toBeInTheDocument()

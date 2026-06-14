@@ -38,3 +38,12 @@ export async function prepareApplication(jobId: string): Promise<PrepareApplicat
   const response = await api.post<PrepareApplicationResponse>(`/jobs/${jobId}/prepare`)
   return response.data
 }
+
+export async function createManualApplication(body: {
+  jd_text: string
+  title?: string
+  company?: string
+}): Promise<{ status: string; job_id: string }> {
+  const response = await api.post<{ status: string; job_id: string }>('/jobs/manual', body)
+  return response.data
+}

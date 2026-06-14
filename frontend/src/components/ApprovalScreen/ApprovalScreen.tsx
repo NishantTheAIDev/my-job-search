@@ -2,7 +2,7 @@ import { useState } from 'react'
 import { useQuery, useMutation, useQueryClient } from '@tanstack/react-query'
 import {
   getApplicationByJob,
-  approveApplication,
+  saveApplication,
   getResumeDownloadUrl,
   getCoverLetterDownloadUrl,
   RENDERCV_THEMES,
@@ -76,23 +76,24 @@ export function ApprovalScreen() {
     enabled: !!appQuery.data?.job_posting_id,
   })
 
-  const approveMutation = useMutation({
-    mutationFn: () => approveApplication(appQuery.data!.id),
+  const saveMutation = useMutation({
+    mutationFn: () => saveApplication(appQuery.data!.id),
     onSuccess: (data) => {
       const company = jobQuery.data?.company ?? 'the company'
-      setSuccessMessage(`Application submitted to ${company}!`)
+      setSuccessMessage(`Application saved for ${company}!`)
       setShowModal(false)
       queryClient.invalidateQueries({ queryKey: ['applications'] })
+      queryClient.invalidateQueries({ queryKey: ['applications', 'saved'] })
       queryClient.setQueryData(['application', activeApplicationId], data)
     },
     onError: (err) => {
       const axiosErr = err as AxiosError<{ detail?: string }>
       if (axiosErr.response?.status === 409) {
         setSubmitError(
-          axiosErr.response.data?.detail ?? 'Application was already submitted or is in a conflicting state.'
+          axiosErr.response.data?.detail ?? 'Application is not in a pending state and cannot be saved.'
         )
       } else {
-        setSubmitError('Failed to submit application. Please try again.')
+        setSubmitError('Failed to save application. Please try again.')
       }
     },
   })
@@ -101,13 +102,13 @@ export function ApprovalScreen() {
     setShowApproval(false)
   }
 
-  function handleApproveAndSubmit() {
+  function handleApproveAndSave() {
     setSubmitError(null)
     setShowModal(true)
   }
 
   function handleConfirm() {
-    approveMutation.mutate()
+    saveMutation.mutate()
   }
 
   function handleCancel() {
@@ -126,6 +127,8 @@ export function ApprovalScreen() {
   const isPreparing = application?.status === 'preparing'
   const prepFailed = application?.status === 'prep_failed'
   const isReady = !!application && !isPreparing && !prepFailed
+
+  const gaps = application?.match_gaps ?? []
 
   return (
     <div className="fixed inset-0 z-40 overflow-y-auto bg-slate-50 animate-fade-in">
@@ -225,6 +228,24 @@ export function ApprovalScreen() {
               </div>
             </SectionCard>
 
+            {/* Gaps to address — only rendered when there are gaps */}
+            {gaps.length > 0 && (
+              <SectionCard id="gaps-heading" label="Gaps to Address">
+                <ul className="flex flex-col gap-2" aria-label="Match gaps list">
+                  {gaps.map((gap, i) => (
+                    <li key={i} className="flex items-start gap-2.5">
+                      <span className="mt-0.5 flex h-4 w-4 shrink-0 items-center justify-center rounded-full bg-amber-100 text-amber-600" aria-hidden="true">
+                        <svg className="h-2.5 w-2.5" viewBox="0 0 16 16" fill="currentColor">
+                          <path fillRule="evenodd" d="M8 1.5a6.5 6.5 0 1 0 0 13 6.5 6.5 0 0 0 0-13ZM0 8a8 8 0 1 1 16 0A8 8 0 0 1 0 8Zm8-3.5a.75.75 0 0 1 .75.75v3a.75.75 0 0 1-1.5 0v-3A.75.75 0 0 1 8 4.5ZM8 11a1 1 0 1 0 0-2 1 1 0 0 0 0 2Z" clipRule="evenodd" />
+                        </svg>
+                      </span>
+                      <span className="text-[13px] leading-relaxed text-slate-700">{gap}</span>
+                    </li>
+                  ))}
+                </ul>
+              </SectionCard>
+            )}
+
             {/* Tailored resume */}
             <SectionCard
               id="resume-heading"
@@ -273,19 +294,20 @@ export function ApprovalScreen() {
               </div>
             </SectionCard>
 
-            {/* Action buttons */}
-            {!successMessage && (
+            {/* Action buttons — only for a pending application (a saved/rejected
+                one is terminal and would 409 on another save). */}
+            {!successMessage && application.status === 'pending' && (
               <div className="flex items-center gap-3 pt-1">
                 <button
-                  onClick={handleApproveAndSubmit}
-                  disabled={approveMutation.isPending}
-                  aria-busy={approveMutation.isPending}
+                  onClick={handleApproveAndSave}
+                  disabled={saveMutation.isPending}
+                  aria-busy={saveMutation.isPending}
                   className="flex flex-1 items-center justify-center gap-2 rounded-xl bg-indigo-600 py-3 text-[14px] font-semibold text-white shadow-sm transition hover:bg-indigo-700 focus:outline-none focus:ring-2 focus:ring-indigo-500 focus:ring-offset-2 disabled:cursor-not-allowed disabled:opacity-60"
                 >
                   <svg className="h-4 w-4" viewBox="0 0 16 16" fill="currentColor" aria-hidden="true">
                     <path d="M12.416 3.376a.75.75 0 0 1 .208 1.04l-5 7.5a.75.75 0 0 1-1.154.114l-3-3a.75.75 0 0 1 1.06-1.06l2.353 2.353 4.493-6.74a.75.75 0 0 1 1.04-.207Z" />
                   </svg>
-                  Approve &amp; Submit
+                  Approve &amp; Save
                 </button>
                 <button
                   onClick={handleBack}
@@ -306,7 +328,7 @@ export function ApprovalScreen() {
           title={job.title}
           onConfirm={handleConfirm}
           onCancel={handleCancel}
-          isSubmitting={approveMutation.isPending}
+          isSubmitting={saveMutation.isPending}
           error={submitError}
         />
       )}

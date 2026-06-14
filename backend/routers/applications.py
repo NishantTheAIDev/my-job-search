@@ -1,5 +1,6 @@
 """Application management endpoints."""
 
+import json
 import uuid
 from typing import Literal
 
@@ -10,6 +11,7 @@ from sqlmodel import Session, select
 from backend.database import get_session
 from backend.limiter import limiter
 from backend.models.application import Application, ApplicationStatus
+from backend.models.job_posting import JobPosting
 from backend.services.application_service import (
     ApplicationError,
     InvalidStateError,
@@ -17,6 +19,7 @@ from backend.services.application_service import (
     edit_application_content,
     reject_application,
     revise_application,
+    save_application,
 )
 
 router = APIRouter()
@@ -30,6 +33,7 @@ class ApplicationResponse(BaseModel):
     prep_error: str
     match_score: int
     match_rationale: str
+    match_gaps: list[str]
     tailored_resume_text: str
     resume_diff_json: str
     cover_letter_text: str
@@ -40,9 +44,25 @@ class ApplicationResponse(BaseModel):
     approved_at: str | None
     submitted_at: str | None
     rejected_at: str | None
+    saved_at: str | None
+
+
+class SavedApplicationItem(BaseModel):
+    id: uuid.UUID
+    job_title: str
+    company: str | None
+    location: str | None
+    match_score: int
+    saved_at: str | None
 
 
 def _to_response(app: Application) -> ApplicationResponse:
+    try:
+        gaps: list[str] = json.loads(app.match_gaps)
+        if not isinstance(gaps, list):
+            gaps = []
+    except (json.JSONDecodeError, TypeError):
+        gaps = []
     return ApplicationResponse(
         id=app.id,
         job_posting_id=app.job_posting_id,
@@ -51,6 +71,7 @@ def _to_response(app: Application) -> ApplicationResponse:
         prep_error=app.prep_error,
         match_score=app.match_score,
         match_rationale=app.match_rationale,
+        match_gaps=gaps,
         tailored_resume_text=app.tailored_resume_text,
         resume_diff_json=app.resume_diff_json,
         cover_letter_text=app.cover_letter_text,
@@ -61,6 +82,7 @@ def _to_response(app: Application) -> ApplicationResponse:
         approved_at=app.approved_at.isoformat() if app.approved_at else None,
         submitted_at=app.submitted_at.isoformat() if app.submitted_at else None,
         rejected_at=app.rejected_at.isoformat() if app.rejected_at else None,
+        saved_at=app.saved_at.isoformat() if app.saved_at else None,
     )
 
 
@@ -73,6 +95,34 @@ def list_applications(
     if status:
         query = query.where(Application.status == status)
     return [_to_response(a) for a in session.exec(query).all()]
+
+
+@router.get("/saved", response_model=list[SavedApplicationItem])
+def list_saved_applications(session: Session = Depends(get_session)):
+    """Return all saved applications ordered by saved_at descending.
+
+    Defined before GET /{app_id} and GET /by-job/... so the literal path
+    segment "saved" is not shadowed by the UUID catch-all route.
+    """
+    apps = session.exec(
+        select(Application)
+        .where(Application.status == ApplicationStatus.saved)
+        .order_by(Application.saved_at.desc())
+    ).all()
+    items: list[SavedApplicationItem] = []
+    for app in apps:
+        posting = session.get(JobPosting, app.job_posting_id)
+        items.append(
+            SavedApplicationItem(
+                id=app.id,
+                job_title=posting.title if posting else "Unknown",
+                company=posting.company if posting else None,
+                location=posting.location if posting else None,
+                match_score=app.match_score,
+                saved_at=app.saved_at.isoformat() if app.saved_at else None,
+            )
+        )
+    return items
 
 
 @router.get("/by-job/{job_posting_id}", response_model=ApplicationResponse)
@@ -119,6 +169,23 @@ def approve(request: Request, app_id: uuid.UUID, session: Session = Depends(get_
 def reject(app_id: uuid.UUID, session: Session = Depends(get_session)):
     try:
         app = reject_application(app_id, session)
+        return _to_response(app)
+    except InvalidStateError as exc:
+        raise HTTPException(status_code=409, detail=str(exc)) from exc
+    except ApplicationError as exc:
+        raise HTTPException(status_code=404, detail=str(exc)) from exc
+
+
+@router.post("/{app_id}/save", response_model=ApplicationResponse)
+@limiter.limit("20/minute")
+def save(request: Request, app_id: uuid.UUID, session: Session = Depends(get_session)):
+    """Approve & Save — persist the tailored result without submitting to any board.
+
+    Transitions pending → saved (terminal). Writes an AuditLog row in the same
+    commit. Does NOT call submission_service.submit().
+    """
+    try:
+        app = save_application(app_id, session)
         return _to_response(app)
     except InvalidStateError as exc:
         raise HTTPException(status_code=409, detail=str(exc)) from exc

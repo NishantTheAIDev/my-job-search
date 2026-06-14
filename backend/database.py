@@ -20,6 +20,8 @@ _ADDITIVE_COLUMNS: dict[str, dict[str, str]] = {
         "resume_data_yaml": "VARCHAR NOT NULL DEFAULT ''",
         "cover_letter_data_yaml": "VARCHAR NOT NULL DEFAULT ''",
         "tailoring_failed": "BOOLEAN NOT NULL DEFAULT 0",
+        "match_gaps": "VARCHAR NOT NULL DEFAULT '[]'",
+        "saved_at": "DATETIME",
     },
 }
 
