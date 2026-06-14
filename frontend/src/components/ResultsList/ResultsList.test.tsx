@@ -14,8 +14,6 @@ const mockGetSearchStatus = vi.mocked(searchApi.getSearchStatus)
 const mockListJobs = vi.mocked(jobsApi.listJobs)
 const mockGetJobFilters = vi.mocked(jobsApi.getJobFilters)
 
-const noop = () => {}
-
 function wrapper({ children }: { children: React.ReactNode }) {
   const client = new QueryClient({
     defaultOptions: { queries: { retry: false, refetchInterval: false } },
@@ -49,7 +47,7 @@ beforeEach(() => {
 
 describe('ResultsList', () => {
   it('renders nothing when no active search (landing handles the empty state)', () => {
-    const { container } = render(<ResultsList onFiltersLoaded={noop} />, { wrapper })
+    const { container } = render(<ResultsList />, { wrapper })
     expect(container).toBeEmptyDOMElement()
   })
 
@@ -62,7 +60,7 @@ describe('ResultsList', () => {
     })
 
     useJobSearchStore.setState({ activeSearchJobId: 'search-1' })
-    render(<ResultsList onFiltersLoaded={noop} />, { wrapper })
+    render(<ResultsList />, { wrapper })
 
     await waitFor(() => {
       expect(screen.getByRole('status', { name: /searching job boards/i })).toBeInTheDocument()
@@ -78,7 +76,7 @@ describe('ResultsList', () => {
     })
 
     useJobSearchStore.setState({ activeSearchJobId: 'search-1' })
-    render(<ResultsList onFiltersLoaded={noop} />, { wrapper })
+    render(<ResultsList />, { wrapper })
 
     await waitFor(() => {
       expect(screen.getByRole('status')).toBeInTheDocument()
@@ -96,7 +94,7 @@ describe('ResultsList', () => {
     mockGetJobFilters.mockResolvedValue({ sources: [], companies: [] })
 
     useJobSearchStore.setState({ activeSearchJobId: 'search-1' })
-    render(<ResultsList onFiltersLoaded={noop} />, { wrapper })
+    render(<ResultsList />, { wrapper })
 
     await waitFor(() => {
       expect(screen.getByText(/no jobs found/i)).toBeInTheDocument()
@@ -114,7 +112,7 @@ describe('ResultsList', () => {
     mockGetJobFilters.mockResolvedValue({ sources: ['greenhouse'], companies: ['Acme Corp'] })
 
     useJobSearchStore.setState({ activeSearchJobId: 'search-1' })
-    render(<ResultsList onFiltersLoaded={noop} />, { wrapper })
+    render(<ResultsList />, { wrapper })
 
     await waitFor(() => {
       expect(screen.getByText('Senior React Engineer')).toBeInTheDocument()
@@ -126,30 +124,11 @@ describe('ResultsList', () => {
     mockGetSearchStatus.mockRejectedValue(new Error('Network error'))
 
     useJobSearchStore.setState({ activeSearchJobId: 'search-1' })
-    render(<ResultsList onFiltersLoaded={noop} />, { wrapper })
+    render(<ResultsList />, { wrapper })
 
     await waitFor(() => {
       expect(screen.getByRole('alert')).toBeInTheDocument()
     })
   })
 
-  it('calls onFiltersLoaded when filter data is available', async () => {
-    const filtersData = { sources: ['greenhouse', 'lever'], companies: ['Acme Corp'] }
-    mockGetSearchStatus.mockResolvedValue({
-      job_id: 'search-1',
-      status: 'complete',
-      total_results: 1,
-      error: null,
-    })
-    mockListJobs.mockResolvedValue({ items: [sampleJob], total: 1, page: 1, page_size: 20 })
-    mockGetJobFilters.mockResolvedValue(filtersData)
-
-    const onFiltersLoaded = vi.fn()
-    useJobSearchStore.setState({ activeSearchJobId: 'search-1' })
-    render(<ResultsList onFiltersLoaded={onFiltersLoaded} />, { wrapper })
-
-    await waitFor(() => {
-      expect(onFiltersLoaded).toHaveBeenCalledWith(filtersData)
-    })
-  })
 })

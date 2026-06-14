@@ -4,6 +4,7 @@ import type { AxiosError } from 'axios'
 import { prepareApplication } from '../../api/jobs'
 import { useJobSearchStore } from '../../store/useJobSearchStore'
 import { ScoreBadge } from './ScoreBadge'
+import { formatPostedDate } from '../../lib/date'
 import type { JobPosting } from '../../types'
 
 function sanitizeDescription(raw: string): string {
@@ -85,6 +86,9 @@ export function JobDetailPanel({ job, onClose }: JobDetailPanelProps) {
     onSuccess: (data) => {
       queryClient.invalidateQueries({ queryKey: ['applications'] })
       setActiveApplication(data.job_id)
+      // Close this detail slide-over (z-50) so the ResumeEditor (z-40) hosting
+      // the prep pipeline and approve/reject controls becomes visible.
+      onClose()
     },
     onError: (err) => {
       const detail = (err as AxiosError<{ detail?: string }>)?.response?.data?.detail
@@ -150,17 +154,13 @@ export function JobDetailPanel({ job, onClose }: JobDetailPanelProps) {
               {job.compensation}
             </span>
           )}
-          {job.posted_date && (
+          {formatPostedDate(job.posted_date) && (
             <span className="inline-flex items-center gap-1.5 rounded-full bg-slate-100 px-2.5 py-1 text-[12px] font-medium text-slate-600">
               <svg className="h-3.5 w-3.5" viewBox="0 0 16 16" fill="currentColor" aria-hidden="true">
                 <path d="M5.75 7.5a.75.75 0 1 0 0 1.5.75.75 0 0 0 0-1.5ZM5 10.25a.75.75 0 1 1 1.5 0 .75.75 0 0 1-1.5 0ZM10.25 7.5a.75.75 0 1 0 0 1.5.75.75 0 0 0 0-1.5ZM9.5 10.25a.75.75 0 1 1 1.5 0 .75.75 0 0 1-1.5 0ZM8 7.5a.75.75 0 1 0 0 1.5A.75.75 0 0 0 8 7.5Z" />
                 <path fillRule="evenodd" d="M4.75 1a.75.75 0 0 1 .75.75V3h5V1.75a.75.75 0 0 1 1.5 0V3h.25A2.75 2.75 0 0 1 15 5.75v7.5A2.75 2.75 0 0 1 12.25 16h-8.5A2.75 2.75 0 0 1 1 13.25v-7.5A2.75 2.75 0 0 1 3.75 3H4V1.75A.75.75 0 0 1 4.75 1ZM3.75 4.5c-.69 0-1.25.56-1.25 1.25v.5h11v-.5c0-.69-.56-1.25-1.25-1.25h-8.5Zm-1.25 3.25v5.5c0 .69.56 1.25 1.25 1.25h8.5c.69 0 1.25-.56 1.25-1.25v-5.5h-11Z" clipRule="evenodd" />
               </svg>
-              {new Date(job.posted_date).toLocaleDateString(undefined, {
-                month: 'short',
-                day: 'numeric',
-                year: 'numeric',
-              })}
+              {formatPostedDate(job.posted_date)}
             </span>
           )}
           <span className="inline-flex items-center rounded-full bg-indigo-50 px-2.5 py-1 text-[11px] font-semibold uppercase tracking-wide text-indigo-500">

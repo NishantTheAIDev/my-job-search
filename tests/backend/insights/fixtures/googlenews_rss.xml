@@ -1,0 +1,27 @@
+<?xml version="1.0" encoding="UTF-8"?>
+<rss version="2.0">
+  <channel>
+    <title>Job market - Google News</title>
+    <item>
+      <title>Big Tech hiring rebounds in 2026 - Times of India</title>
+      <link>https://news.google.com/rss/articles/ABC123</link>
+      <guid isPermaLink="false">ABC123</guid>
+      <pubDate>Sat, 14 Jun 2026 08:30:00 GMT</pubDate>
+      <source url="https://timesofindia.indiatimes.com">Times of India</source>
+    </item>
+    <item>
+      <title>Layoffs continue across startups - NDTV Profit</title>
+      <link>https://news.google.com/rss/articles/XYZ789</link>
+      <guid isPermaLink="false">XYZ789</guid>
+      <pubDate>Fri, 13 Jun 2026 10:00:00 GMT</pubDate>
+      <source url="https://www.ndtvprofit.com">NDTV Profit</source>
+    </item>
+    <item>
+      <title>Malicious entry</title>
+      <link>javascript:alert(1)</link>
+      <guid isPermaLink="false">EVIL1</guid>
+      <pubDate>Fri, 13 Jun 2026 09:00:00 GMT</pubDate>
+      <source url="https://evil.example">Evil Source</source>
+    </item>
+  </channel>
+</rss>

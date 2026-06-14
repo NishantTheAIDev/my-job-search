@@ -26,9 +26,7 @@ def get_client() -> anthropic.AsyncAnthropic:
     if _client is None:
         # The key is loaded from .env via pydantic-settings (backend/config.py);
         # it is NOT exported to os.environ, so pass it explicitly.
-        _client = anthropic.AsyncAnthropic(
-            api_key=settings.anthropic_api_key.get_secret_value()
-        )
+        _client = anthropic.AsyncAnthropic(api_key=settings.anthropic_api_key.get_secret_value())
     return _client
 
 

@@ -11,7 +11,8 @@ from backend.config import settings
 from backend.database import create_db_and_tables
 from backend.limiter import limiter
 from backend.logging_config import RequestLoggingMiddleware, configure_logging
-from backend.routers import applications, exports, jobs, resume, search
+from backend.models import insights_cache as _insights_cache_model  # noqa: F401 — registers table
+from backend.routers import applications, exports, insights, jobs, resume, search
 
 configure_logging(settings.log_level)
 logger = logging.getLogger(__name__)
@@ -46,3 +47,4 @@ app.include_router(search.router, prefix="/search", tags=["search"])
 app.include_router(jobs.router, prefix="/jobs", tags=["jobs"])
 app.include_router(applications.router, prefix="/applications", tags=["applications"])
 app.include_router(exports.router, prefix="/applications", tags=["exports"])
+app.include_router(insights.router, prefix="/insights", tags=["insights"])

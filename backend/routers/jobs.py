@@ -77,9 +77,7 @@ def list_jobs(
     if source or company:
         logger.debug("list_jobs: filtering source=%s company=%s", source, company)
 
-    total = session.exec(
-        select(func.count()).select_from(query.subquery())
-    ).one()
+    total = session.exec(select(func.count()).select_from(query.subquery())).one()
     start = (page - 1) * page_size
     items = session.exec(query.offset(start).limit(page_size)).all()
 

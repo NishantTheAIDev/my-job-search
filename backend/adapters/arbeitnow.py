@@ -43,7 +43,7 @@ def _parse_date(val: int | float | str | None) -> str | None:
     if isinstance(val, (int, float)):
         try:
             return datetime.fromtimestamp(val, tz=UTC).strftime("%Y-%m-%d")
-        except (ValueError, OSError):
+        except ValueError, OSError:
             return None
     try:
         return datetime.fromisoformat(str(val).replace("Z", "+00:00")).strftime("%Y-%m-%d")
