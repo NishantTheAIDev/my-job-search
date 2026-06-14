@@ -47,6 +47,8 @@ const baseApplication: ApplicationResponse = {
   approved_at: null,
   submitted_at: null,
   rejected_at: null,
+  match_gaps: [],
+  saved_at: null,
 }
 
 beforeEach(() => {

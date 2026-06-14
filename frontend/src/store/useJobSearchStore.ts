@@ -11,6 +11,8 @@ interface JobSearchState {
   resumeUploaded: boolean
   showApproval: boolean
   showInsights: boolean
+  showPasteJd: boolean
+  showSavedApplications: boolean
   setCriteria: (c: Partial<SearchCriteria>) => void
   setActiveSearchJob: (id: string | null) => void
   setSelectedJob: (job: JobPosting | null) => void
@@ -20,6 +22,8 @@ interface JobSearchState {
   setResumeUploaded: (v: boolean) => void
   setShowApproval: (v: boolean) => void
   setShowInsights: (v: boolean) => void
+  setShowPasteJd: (v: boolean) => void
+  setShowSavedApplications: (v: boolean) => void
   resetToLanding: () => void
 }
 
@@ -33,6 +37,8 @@ export const useJobSearchStore = create<JobSearchState>((set) => ({
   resumeUploaded: false,
   showApproval: false,
   showInsights: false,
+  showPasteJd: false,
+  showSavedApplications: false,
   setCriteria: (c) => set((s) => ({ criteria: { ...s.criteria, ...c } })),
   setActiveSearchJob: (id) => set({ activeSearchJobId: id }),
   setSelectedJob: (job) => set({ selectedJob: job }),
@@ -42,13 +48,19 @@ export const useJobSearchStore = create<JobSearchState>((set) => ({
   setResumeUploaded: (v) => set({ resumeUploaded: v }),
   setShowApproval: (v) => set({ showApproval: v }),
   setShowInsights: (v) => set({ showInsights: v }),
+  setShowPasteJd: (v) => set({ showPasteJd: v }),
+  setShowSavedApplications: (v) => set({ showSavedApplications: v }),
   resetToLanding: () =>
     set({
       activeSearchJobId: null,
       selectedJob: null,
       selectedSources: [],
       selectedCompanies: [],
+      activeApplicationId: null,
+      showApproval: false,
       showInsights: false,
+      showPasteJd: false,
+      showSavedApplications: false,
       criteria: { query: '', remote_only: false, page: 1 },
     }),
 }))

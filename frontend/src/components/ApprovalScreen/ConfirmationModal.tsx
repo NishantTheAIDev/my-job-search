@@ -50,18 +50,18 @@ export function ConfirmationModal({
           {/* Icon */}
           <div className="mb-4 flex h-11 w-11 items-center justify-center rounded-full bg-indigo-100">
             <svg className="h-6 w-6 text-indigo-600" fill="none" stroke="currentColor" strokeWidth={1.75} viewBox="0 0 24 24" aria-hidden="true">
-              <path strokeLinecap="round" strokeLinejoin="round" d="M6 12 3.269 3.125A59.769 59.769 0 0 1 21.485 12 59.768 59.768 0 0 1 3.27 20.875L5.999 12Zm0 0h7.5" />
+              <path strokeLinecap="round" strokeLinejoin="round" d="M17.593 3.322c1.1.128 1.907 1.077 1.907 2.185V21L12 17.25 4.5 21V5.507c0-1.108.806-2.057 1.907-2.185a48.507 48.507 0 0 1 11.186 0Z" />
             </svg>
           </div>
 
           <h2 id="confirm-modal-title" className="text-[16px] font-bold text-slate-900">
-            Confirm submission
+            Save this application?
           </h2>
           <p id="confirm-modal-desc" className="mt-1.5 text-[13px] leading-relaxed text-slate-600">
-            You're about to submit your application to{' '}
+            You're about to save your tailored application to{' '}
             <strong className="font-semibold text-slate-800">{companyDisplay}</strong> for the{' '}
             <strong className="font-semibold text-slate-800">{title}</strong> role.
-            This action cannot be undone.
+            You can find it later in Saved Applications.
           </p>
 
           {error && (
@@ -97,10 +97,10 @@ export function ConfirmationModal({
                     <circle className="opacity-25" cx="12" cy="12" r="10" stroke="currentColor" strokeWidth="4" />
                     <path className="opacity-75" fill="currentColor" d="M4 12a8 8 0 0 1 8-8V0C5.373 0 0 5.373 0 12h4Z" />
                   </svg>
-                  Submitting…
+                  Saving…
                 </>
               ) : (
-                'Confirm & Submit'
+                'Approve & Save'
               )}
             </button>
           </div>

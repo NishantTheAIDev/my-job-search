@@ -59,6 +59,7 @@ export type ApplicationStatus =
   | 'rejected'
   | 'submitted'
   | 'failed'
+  | 'saved'
 
 // Pipeline stage reported on prep_stage while status === 'preparing'.
 export type PrepStage = '' | 'parsing' | 'scoring' | 'tailoring' | 'drafting'
@@ -81,6 +82,17 @@ export interface ApplicationResponse {
   approved_at: string | null
   submitted_at: string | null
   rejected_at: string | null
+  match_gaps: string[]
+  saved_at: string | null
+}
+
+export interface SavedApplicationSummary {
+  id: string
+  job_title: string
+  company: string | null
+  location: string | null
+  match_score: number
+  saved_at: string | null
 }
 
 export type DiffHunkType = 'unchanged' | 'added' | 'removed'

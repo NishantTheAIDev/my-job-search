@@ -17,7 +17,7 @@ from backend.llm.prompts import reviser as reviser_prompts
 from backend.llm.sanitize import sanitize_jd_text
 from backend.models.application import Application, ApplicationStatus
 from backend.models.audit_log import AuditLog
-from backend.models.job_posting import JobPosting
+from backend.models.job_posting import JobPosting, RemoteStatus
 from backend.models.resume import Resume
 from backend.services import drafting_service, rendercv_service, scoring_service, tailoring_service
 
@@ -183,6 +183,7 @@ async def prepare_application(
         # Persist the score and propagate it to the posting as soon as we have it.
         app.match_score = score
         app.match_rationale = rationale
+        app.match_gaps = json.dumps(gaps)
         posting.match_score = score
         session.add(posting)
 
@@ -357,6 +358,88 @@ def reject_application(app_id: uuid.UUID, session: Session) -> Application:
         posting.company if posting else None,
     )
     return app
+
+
+def save_application(app_id: uuid.UUID, session: Session) -> Application:
+    """Transition an application from pending -> saved.
+
+    'saved' is a terminal status meaning the user wants to keep this tailored
+    result for reference without submitting it to a job board. This function
+    MUST NOT call submission_service.submit() — there is no submission path here.
+    Status update and AuditLog are written in a single commit (mirrors reject_application).
+    """
+    app = session.get(Application, app_id)
+    if not app:
+        raise ApplicationError(f"Application {app_id} not found")
+    if app.status != ApplicationStatus.pending:
+        raise InvalidStateError(
+            f"Cannot save application in status '{app.status}' — must be 'pending'"
+        )
+
+    posting = session.get(JobPosting, app.job_posting_id)
+    app.status = ApplicationStatus.saved
+    app.saved_at = datetime.now(UTC)
+    audit = AuditLog(
+        application_id=app.id,
+        action="saved",
+        job_title=posting.title if posting else "unknown",
+        company=posting.company if posting else None,
+        board_url=posting.url if posting else "",
+    )
+    session.add(app)
+    session.add(audit)
+    session.commit()
+    session.refresh(app)
+    logger.info(
+        "save_application: id=%s title=%r company=%r → saved",
+        app_id,
+        posting.title if posting else "unknown",
+        posting.company if posting else None,
+    )
+    return app
+
+
+def create_manual_application(
+    jd_text: str,
+    title: str | None,
+    company: str | None,
+    session: Session,
+) -> JobPosting:
+    """Create a synthetic JobPosting from a pasted job description.
+
+    The returned posting can be passed straight into prepare_application_task so
+    the entire existing LLM pipeline (parse → score → tailor → draft) runs
+    unchanged. sanitize_jd_text() runs inside _parse_jd, so the prompt-injection
+    invariant is preserved end-to-end.
+
+    Raises ApplicationError if no active resume exists (fail-fast before queuing).
+    """
+    resume = session.exec(
+        select(Resume).where(Resume.is_active == True)  # noqa: E712
+    ).first()
+    if not resume:
+        raise ApplicationError("No active resume found — upload a resume first")
+
+    posting = JobPosting(
+        source="manual",
+        source_job_id=str(uuid.uuid4()),
+        search_job_id=None,
+        title=title or "Pasted job description",
+        company=company or None,
+        url="",
+        description=jd_text,
+        remote_status=RemoteStatus.unspecified,
+    )
+    session.add(posting)
+    session.commit()
+    session.refresh(posting)
+    logger.info(
+        "create_manual_application: posting=%s title=%r company=%r",
+        posting.id,
+        posting.title,
+        posting.company,
+    )
+    return posting
 
 
 async def revise_application(

@@ -1,15 +1,17 @@
 import logging
 import uuid
 
-from fastapi import APIRouter, BackgroundTasks, Depends, HTTPException, Query
-from pydantic import BaseModel
+from fastapi import APIRouter, BackgroundTasks, Depends, HTTPException, Query, Request
+from pydantic import BaseModel, Field
 from sqlalchemy import func
 from sqlmodel import Session, select
 
 from backend.background.tasks import prepare_application_task
 from backend.database import get_session
+from backend.limiter import limiter
 from backend.models.job_posting import JobPosting, RemoteStatus
 from backend.models.resume import Resume
+from backend.services.application_service import ApplicationError, create_manual_application
 
 logger = logging.getLogger(__name__)
 router = APIRouter()
@@ -100,6 +102,45 @@ def get_job_filters(
     sources = sorted({p.source for p in postings})
     companies = sorted({p.company for p in postings if p.company})
     return JobFiltersResponse(sources=sources, companies=companies)
+
+
+class ManualJobRequest(BaseModel):
+    jd_text: str = Field(min_length=1, max_length=30_000)
+    title: str | None = Field(default=None, max_length=200)
+    company: str | None = Field(default=None, max_length=200)
+
+
+@router.post("/manual")
+@limiter.limit("5/minute")
+async def create_manual_job(
+    request: Request,
+    body: ManualJobRequest,
+    background_tasks: BackgroundTasks,
+    session: Session = Depends(get_session),
+):
+    """Create a synthetic job posting from a pasted JD and kick off the prepare pipeline.
+
+    Defined before GET /{job_id} so the literal path segment "manual" is not
+    parsed as a UUID (which would return 422).
+
+    jd_text flows into sanitize_jd_text() inside _parse_jd() — the existing
+    prompt-injection defence is preserved end-to-end without any additional handling here.
+    """
+    # Fail fast if no active resume exists (same pattern as POST /{job_id}/prepare).
+    resume = session.exec(
+        select(Resume).where(Resume.is_active == True)  # noqa: E712
+    ).first()
+    if not resume:
+        raise HTTPException(status_code=400, detail="No active resume — upload a resume first")
+
+    try:
+        posting = create_manual_application(body.jd_text, body.title, body.company, session)
+    except ApplicationError as exc:
+        raise HTTPException(status_code=400, detail=str(exc)) from exc
+
+    background_tasks.add_task(prepare_application_task, posting.id)
+    logger.info("manual prepare queued: posting_id=%s title=%r", posting.id, posting.title)
+    return {"status": "preparing", "job_id": str(posting.id)}
 
 
 @router.get("/{job_id}", response_model=JobPostingResponse)
