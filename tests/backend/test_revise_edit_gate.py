@@ -3,9 +3,9 @@
 Critical invariants:
 1. Both functions raise InvalidStateError when status != pending.
 2. The HTTP routes return 409 for non-pending applications.
-3. submission_service.submit() is never called during revise or edit.
-4. Happy-path revise updates tailored_resume_text, resume_data_yaml, resume_diff_json.
-5. Happy-path edit updates cover_letter_text, cover_letter_data_yaml.
+3. Happy-path revise updates tailored_resume_text, resume_data_yaml, resume_diff_json.
+4. Happy-path edit updates cover_letter_text, cover_letter_data_yaml.
+5. Ownership is enforced (foreign/missing app -> ApplicationError -> 404).
 """
 
 import json
@@ -20,7 +20,9 @@ from sqlmodel import Session
 from backend.models.application import Application, ApplicationStatus
 from backend.models.job_posting import JobPosting, RemoteStatus
 from backend.models.resume import Resume
+from backend.models.user import User
 from backend.services.application_service import (
+    ApplicationError,
     InvalidStateError,
     edit_application_content,
     revise_application,
@@ -61,8 +63,9 @@ _COVER_LETTER_YAML = yaml.dump(
 )
 
 
-def _make_posting(session: Session) -> JobPosting:
+def _make_posting(session: Session, user_id: uuid.UUID) -> JobPosting:
     posting = JobPosting(
+        user_id=user_id,
         source="test",
         source_job_id=str(uuid.uuid4()),
         title="Software Engineer",
@@ -77,8 +80,9 @@ def _make_posting(session: Session) -> JobPosting:
     return posting
 
 
-def _make_resume(session: Session) -> Resume:
+def _make_resume(session: Session, user_id: uuid.UUID) -> Resume:
     resume = Resume(
+        user_id=user_id,
         filename="test.txt",
         file_path="/tmp/test.txt",
         text_content="Jane Smith, Software Engineer",
@@ -92,11 +96,13 @@ def _make_resume(session: Session) -> Resume:
 
 def _make_app(
     session: Session,
+    user_id: uuid.UUID,
     status: ApplicationStatus = ApplicationStatus.pending,
 ) -> Application:
-    posting = _make_posting(session)
-    resume = _make_resume(session)
+    posting = _make_posting(session, user_id)
+    resume = _make_resume(session, user_id)
     app = Application(
+        user_id=user_id,
         job_posting_id=posting.id,
         resume_id=resume.id,
         status=status,
@@ -149,9 +155,8 @@ _REVISE_CL_RESPONSE = json.dumps(
     }
 )
 
-# Responses for edit_application_content (structure prompts)
-_EDIT_CV_RESPONSE = _REVISE_CV_RESPONSE  # same shape
-_EDIT_CL_RESPONSE = _REVISE_CL_RESPONSE  # same shape
+_EDIT_CV_RESPONSE = _REVISE_CV_RESPONSE
+_EDIT_CL_RESPONSE = _REVISE_CL_RESPONSE
 
 
 def _patch_llm(response_text: str):
@@ -176,50 +181,29 @@ def _patch_llm(response_text: str):
 @pytest.mark.parametrize(
     "bad_status",
     [
-        ApplicationStatus.submitted,
+        ApplicationStatus.saved,
         ApplicationStatus.rejected,
-        ApplicationStatus.failed,
         ApplicationStatus.preparing,
         ApplicationStatus.prep_failed,
     ],
 )
-async def test_revise_application_raises_for_non_pending(session: Session, bad_status):
-    app = _make_app(session, status=bad_status)
+async def test_revise_application_raises_for_non_pending(session: Session, user: User, bad_status):
+    app = _make_app(session, user.id, status=bad_status)
     with pytest.raises(InvalidStateError):
-        await revise_application(app.id, "resume", "Make it shorter.", session)
+        await revise_application(app.id, "resume", "Make it shorter.", user.id, session)
 
 
 @pytest.mark.asyncio
-async def test_revise_application_not_found_raises_application_error(session: Session):
-    from backend.services.application_service import ApplicationError
-
+async def test_revise_application_not_found_raises_application_error(session: Session, user: User):
     with pytest.raises(ApplicationError):
-        await revise_application(uuid.uuid4(), "resume", "any", session)
-
-
-# ---------------------------------------------------------------------------
-# revise_application — gate: submission_service.submit() is never called
-# ---------------------------------------------------------------------------
+        await revise_application(uuid.uuid4(), "resume", "any", user.id, session)
 
 
 @pytest.mark.asyncio
-async def test_revise_resume_does_not_call_submit(session: Session):
-    app = _make_app(session)
-    with _patch_llm(_REVISE_CV_RESPONSE), patch(
-        "backend.services.submission_service.submit"
-    ) as mock_submit:
-        await revise_application(app.id, "resume", "Make bullets stronger.", session)
-    mock_submit.assert_not_called()
-
-
-@pytest.mark.asyncio
-async def test_revise_cover_letter_does_not_call_submit(session: Session):
-    app = _make_app(session)
-    with _patch_llm(_REVISE_CL_RESPONSE), patch(
-        "backend.services.submission_service.submit"
-    ) as mock_submit:
-        await revise_application(app.id, "cover_letter", "Shorter please.", session)
-    mock_submit.assert_not_called()
+async def test_revise_other_users_app_raises(session: Session, user: User, other_user: User):
+    app = _make_app(session, user.id)
+    with pytest.raises(ApplicationError):
+        await revise_application(app.id, "resume", "any", other_user.id, session)
 
 
 # ---------------------------------------------------------------------------
@@ -228,20 +212,20 @@ async def test_revise_cover_letter_does_not_call_submit(session: Session):
 
 
 @pytest.mark.asyncio
-async def test_revise_resume_updates_tailored_text(session: Session):
-    app = _make_app(session)
+async def test_revise_resume_updates_tailored_text(session: Session, user: User):
+    app = _make_app(session, user.id)
     original_text = app.tailored_resume_text
     with _patch_llm(_REVISE_CV_RESPONSE):
-        updated = await revise_application(app.id, "resume", "Add more impact.", session)
+        updated = await revise_application(app.id, "resume", "Add more impact.", user.id, session)
     assert updated.tailored_resume_text != original_text
-    assert updated.tailored_resume_text  # not empty
+    assert updated.tailored_resume_text
 
 
 @pytest.mark.asyncio
-async def test_revise_resume_updates_resume_data_yaml(session: Session):
-    app = _make_app(session)
+async def test_revise_resume_updates_resume_data_yaml(session: Session, user: User):
+    app = _make_app(session, user.id)
     with _patch_llm(_REVISE_CV_RESPONSE):
-        updated = await revise_application(app.id, "resume", "Restructure.", session)
+        updated = await revise_application(app.id, "resume", "Restructure.", user.id, session)
     assert updated.resume_data_yaml
     doc = yaml.safe_load(updated.resume_data_yaml)
     assert "cv" in doc
@@ -249,22 +233,20 @@ async def test_revise_resume_updates_resume_data_yaml(session: Session):
 
 
 @pytest.mark.asyncio
-async def test_revise_resume_updates_diff_json(session: Session):
-    app = _make_app(session)
+async def test_revise_resume_updates_diff_json(session: Session, user: User):
+    app = _make_app(session, user.id)
     with _patch_llm(_REVISE_CV_RESPONSE):
-        updated = await revise_application(app.id, "resume", "Rephrase bullets.", session)
+        updated = await revise_application(app.id, "resume", "Rephrase bullets.", user.id, session)
     hunks = json.loads(updated.resume_diff_json)
     assert isinstance(hunks, list)
-    # Regression guard: the diff must be computed against the PREVIOUS text, not
-    # the newly-assigned text — otherwise it self-diffs and shows no changes.
     assert any(h["type"] in ("added", "removed") for h in hunks)
 
 
 @pytest.mark.asyncio
-async def test_revise_resume_status_remains_pending(session: Session):
-    app = _make_app(session)
+async def test_revise_resume_status_remains_pending(session: Session, user: User):
+    app = _make_app(session, user.id)
     with _patch_llm(_REVISE_CV_RESPONSE):
-        updated = await revise_application(app.id, "resume", "Shorten.", session)
+        updated = await revise_application(app.id, "resume", "Shorten.", user.id, session)
     assert updated.status == ApplicationStatus.pending
 
 
@@ -274,20 +256,24 @@ async def test_revise_resume_status_remains_pending(session: Session):
 
 
 @pytest.mark.asyncio
-async def test_revise_cover_letter_updates_text(session: Session):
-    app = _make_app(session)
+async def test_revise_cover_letter_updates_text(session: Session, user: User):
+    app = _make_app(session, user.id)
     original = app.cover_letter_text
     with _patch_llm(_REVISE_CL_RESPONSE):
-        updated = await revise_application(app.id, "cover_letter", "Be more concise.", session)
+        updated = await revise_application(
+            app.id, "cover_letter", "Be more concise.", user.id, session
+        )
     assert updated.cover_letter_text != original
     assert updated.cover_letter_text == "\n\n".join(_REVISED_PARAGRAPHS)
 
 
 @pytest.mark.asyncio
-async def test_revise_cover_letter_updates_yaml(session: Session):
-    app = _make_app(session)
+async def test_revise_cover_letter_updates_yaml(session: Session, user: User):
+    app = _make_app(session, user.id)
     with _patch_llm(_REVISE_CL_RESPONSE):
-        updated = await revise_application(app.id, "cover_letter", "Stronger close.", session)
+        updated = await revise_application(
+            app.id, "cover_letter", "Stronger close.", user.id, session
+        )
     assert updated.cover_letter_data_yaml
     doc = yaml.safe_load(updated.cover_letter_data_yaml)
     sections = doc["cv"]["sections"]
@@ -296,10 +282,10 @@ async def test_revise_cover_letter_updates_yaml(session: Session):
 
 
 @pytest.mark.asyncio
-async def test_revise_cover_letter_status_remains_pending(session: Session):
-    app = _make_app(session)
+async def test_revise_cover_letter_status_remains_pending(session: Session, user: User):
+    app = _make_app(session, user.id)
     with _patch_llm(_REVISE_CL_RESPONSE):
-        updated = await revise_application(app.id, "cover_letter", "Tweak tone.", session)
+        updated = await revise_application(app.id, "cover_letter", "Tweak tone.", user.id, session)
     assert updated.status == ApplicationStatus.pending
 
 
@@ -309,12 +295,10 @@ async def test_revise_cover_letter_status_remains_pending(session: Session):
 
 
 @pytest.mark.asyncio
-async def test_revise_unknown_target_raises_application_error(session: Session):
-    from backend.services.application_service import ApplicationError
-
-    app = _make_app(session)
+async def test_revise_unknown_target_raises_application_error(session: Session, user: User):
+    app = _make_app(session, user.id)
     with _patch_llm("{}"), pytest.raises(ApplicationError, match="Unknown target"):
-        await revise_application(app.id, "bio", "Change something.", session)
+        await revise_application(app.id, "bio", "Change something.", user.id, session)
 
 
 # ---------------------------------------------------------------------------
@@ -326,48 +310,20 @@ async def test_revise_unknown_target_raises_application_error(session: Session):
 @pytest.mark.parametrize(
     "bad_status",
     [
-        ApplicationStatus.submitted,
+        ApplicationStatus.saved,
         ApplicationStatus.rejected,
-        ApplicationStatus.failed,
     ],
 )
-async def test_edit_raises_for_non_pending(session: Session, bad_status):
-    app = _make_app(session, status=bad_status)
+async def test_edit_raises_for_non_pending(session: Session, user: User, bad_status):
+    app = _make_app(session, user.id, status=bad_status)
     with pytest.raises(InvalidStateError):
-        await edit_application_content(app.id, "resume", "Some text.", session)
+        await edit_application_content(app.id, "resume", "Some text.", user.id, session)
 
 
 @pytest.mark.asyncio
-async def test_edit_not_found_raises_application_error(session: Session):
-    from backend.services.application_service import ApplicationError
-
+async def test_edit_not_found_raises_application_error(session: Session, user: User):
     with pytest.raises(ApplicationError):
-        await edit_application_content(uuid.uuid4(), "resume", "text", session)
-
-
-# ---------------------------------------------------------------------------
-# edit_application_content — gate: submit never called
-# ---------------------------------------------------------------------------
-
-
-@pytest.mark.asyncio
-async def test_edit_resume_does_not_call_submit(session: Session):
-    app = _make_app(session)
-    with _patch_llm(_EDIT_CV_RESPONSE), patch(
-        "backend.services.submission_service.submit"
-    ) as mock_submit:
-        await edit_application_content(app.id, "resume", "Jane Smith\n\nEngineer at Acme", session)
-    mock_submit.assert_not_called()
-
-
-@pytest.mark.asyncio
-async def test_edit_cover_letter_does_not_call_submit(session: Session):
-    app = _make_app(session)
-    with _patch_llm(_EDIT_CL_RESPONSE), patch(
-        "backend.services.submission_service.submit"
-    ) as mock_submit:
-        await edit_application_content(app.id, "cover_letter", "Dear Hiring Manager...", session)
-    mock_submit.assert_not_called()
+        await edit_application_content(uuid.uuid4(), "resume", "text", user.id, session)
 
 
 # ---------------------------------------------------------------------------
@@ -376,11 +332,11 @@ async def test_edit_cover_letter_does_not_call_submit(session: Session):
 
 
 @pytest.mark.asyncio
-async def test_edit_resume_updates_text_and_yaml(session: Session):
-    app = _make_app(session)
+async def test_edit_resume_updates_text_and_yaml(session: Session, user: User):
+    app = _make_app(session, user.id)
     with _patch_llm(_EDIT_CV_RESPONSE):
         updated = await edit_application_content(
-            app.id, "resume", "Jane Smith\n\nEngineer at Acme.", session
+            app.id, "resume", "Jane Smith\n\nEngineer at Acme.", user.id, session
         )
     assert updated.tailored_resume_text
     assert updated.resume_data_yaml
@@ -389,19 +345,19 @@ async def test_edit_resume_updates_text_and_yaml(session: Session):
 
 
 @pytest.mark.asyncio
-async def test_edit_resume_updates_diff_json(session: Session):
-    app = _make_app(session)
+async def test_edit_resume_updates_diff_json(session: Session, user: User):
+    app = _make_app(session, user.id)
     with _patch_llm(_EDIT_CV_RESPONSE):
-        updated = await edit_application_content(app.id, "resume", "New text.", session)
+        updated = await edit_application_content(app.id, "resume", "New text.", user.id, session)
     assert updated.resume_diff_json
-    json.loads(updated.resume_diff_json)  # must be valid JSON
+    json.loads(updated.resume_diff_json)
 
 
 @pytest.mark.asyncio
-async def test_edit_resume_status_remains_pending(session: Session):
-    app = _make_app(session)
+async def test_edit_resume_status_remains_pending(session: Session, user: User):
+    app = _make_app(session, user.id)
     with _patch_llm(_EDIT_CV_RESPONSE):
-        updated = await edit_application_content(app.id, "resume", "New text.", session)
+        updated = await edit_application_content(app.id, "resume", "New text.", user.id, session)
     assert updated.status == ApplicationStatus.pending
 
 
@@ -411,21 +367,21 @@ async def test_edit_resume_status_remains_pending(session: Session):
 
 
 @pytest.mark.asyncio
-async def test_edit_cover_letter_updates_text(session: Session):
-    app = _make_app(session)
+async def test_edit_cover_letter_updates_text(session: Session, user: User):
+    app = _make_app(session, user.id)
     with _patch_llm(_EDIT_CL_RESPONSE):
         updated = await edit_application_content(
-            app.id, "cover_letter", "New cover letter text.", session
+            app.id, "cover_letter", "New cover letter text.", user.id, session
         )
     assert updated.cover_letter_text == "\n\n".join(_REVISED_PARAGRAPHS)
 
 
 @pytest.mark.asyncio
-async def test_edit_cover_letter_updates_yaml(session: Session):
-    app = _make_app(session)
+async def test_edit_cover_letter_updates_yaml(session: Session, user: User):
+    app = _make_app(session, user.id)
     with _patch_llm(_EDIT_CL_RESPONSE):
         updated = await edit_application_content(
-            app.id, "cover_letter", "New cover letter text.", session
+            app.id, "cover_letter", "New cover letter text.", user.id, session
         )
     assert updated.cover_letter_data_yaml
     doc = yaml.safe_load(updated.cover_letter_data_yaml)
@@ -433,12 +389,12 @@ async def test_edit_cover_letter_updates_yaml(session: Session):
 
 
 # ---------------------------------------------------------------------------
-# HTTP route-level tests: 409 for non-pending (revise and edit)
+# HTTP route-level tests: 409 for non-pending, 404 for missing/foreign
 # ---------------------------------------------------------------------------
 
 
-def test_revise_route_returns_409_for_submitted_app(client: TestClient, session: Session):
-    app = _make_app(session, status=ApplicationStatus.submitted)
+def test_revise_route_returns_409_for_saved_app(client: TestClient, session: Session, user: User):
+    app = _make_app(session, user.id, status=ApplicationStatus.saved)
     response = client.post(
         f"/applications/{app.id}/revise",
         json={"target": "resume", "instructions": "Make it shorter."},
@@ -454,8 +410,10 @@ def test_revise_route_returns_404_for_missing_app(client: TestClient):
     assert response.status_code == 404
 
 
-def test_edit_content_route_returns_409_for_submitted_app(client: TestClient, session: Session):
-    app = _make_app(session, status=ApplicationStatus.submitted)
+def test_edit_content_route_returns_409_for_saved_app(
+    client: TestClient, session: Session, user: User
+):
+    app = _make_app(session, user.id, status=ApplicationStatus.saved)
     response = client.put(
         f"/applications/{app.id}/content",
         json={"target": "resume", "text": "Some resume text."},
@@ -471,8 +429,10 @@ def test_edit_content_route_returns_404_for_missing_app(client: TestClient):
     assert response.status_code == 404
 
 
-def test_revise_route_returns_409_for_rejected_app(client: TestClient, session: Session):
-    app = _make_app(session, status=ApplicationStatus.rejected)
+def test_revise_route_returns_409_for_rejected_app(
+    client: TestClient, session: Session, user: User
+):
+    app = _make_app(session, user.id, status=ApplicationStatus.rejected)
     response = client.post(
         f"/applications/{app.id}/revise",
         json={"target": "cover_letter", "instructions": "Be friendlier."},
@@ -480,10 +440,24 @@ def test_revise_route_returns_409_for_rejected_app(client: TestClient, session: 
     assert response.status_code == 409
 
 
-def test_edit_content_route_returns_409_for_rejected_app(client: TestClient, session: Session):
-    app = _make_app(session, status=ApplicationStatus.rejected)
+def test_edit_content_route_returns_409_for_rejected_app(
+    client: TestClient, session: Session, user: User
+):
+    app = _make_app(session, user.id, status=ApplicationStatus.rejected)
     response = client.put(
         f"/applications/{app.id}/content",
         json={"target": "cover_letter", "text": "New cover letter."},
     )
     assert response.status_code == 409
+
+
+def test_revise_route_returns_404_for_other_users_app(
+    session: Session, user: User, other_user: User, make_client: object
+):
+    app = _make_app(session, user.id)
+    client_b = make_client(other_user)
+    response = client_b.post(
+        f"/applications/{app.id}/revise",
+        json={"target": "resume", "instructions": "Make it shorter."},
+    )
+    assert response.status_code == 404

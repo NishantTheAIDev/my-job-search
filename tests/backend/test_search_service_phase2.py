@@ -22,6 +22,7 @@ from sqlmodel import Session, select
 
 from backend.models.job_posting import JobPosting, RemoteStatus, SearchCriteria
 from backend.models.search_job import SearchJob, SearchJobStatus
+from backend.models.user import User
 from backend.services.search_service import run_search
 
 # ---------------------------------------------------------------------------
@@ -96,9 +97,9 @@ class FailingAdapter:
 
 
 @pytest.fixture()
-def search_job(session: Session) -> SearchJob:
+def search_job(session: Session, user: User) -> SearchJob:
     """Create a queued SearchJob in the test DB and return it."""
-    job = SearchJob(criteria_json='{"query":"software engineer"}')
+    job = SearchJob(criteria_json='{"query":"software engineer"}', user_id=user.id)
     session.add(job)
     session.commit()
     session.refresh(job)
@@ -351,13 +352,13 @@ def test_status_endpoint_includes_progress_fields(client: TestClient):
     assert isinstance(data["total_adapters"], int)
 
 
-def test_status_endpoint_correct_values_after_run(client: TestClient, session: Session):
+def test_status_endpoint_correct_values_after_run(client: TestClient, session: Session, user: User):
     """completed_adapters == total_adapters == adapter count after a completed run."""
     fast = FastAdapter()
     adapter_list = [fast]
 
     # Create a search job directly so we can run the service synchronously.
-    job = SearchJob(criteria_json='{"query":"software engineer"}')
+    job = SearchJob(criteria_json='{"query":"software engineer"}', user_id=user.id)
     session.add(job)
     session.commit()
     session.refresh(job)
@@ -379,13 +380,13 @@ def test_status_endpoint_correct_values_after_run(client: TestClient, session: S
     assert data["total_results"] == 2  # FastAdapter returns 2 postings
 
 
-def test_status_endpoint_progress_with_failing_adapter(client: TestClient, session: Session):
+def test_status_endpoint_progress_with_failing_adapter(client: TestClient, session: Session, user: User):
     """completed_adapters counts both succeeded and failed adapters."""
     fast = FastAdapter()
     failing = FailingAdapter()
     adapter_list = [fast, failing]
 
-    job = SearchJob(criteria_json='{"query":"software engineer"}')
+    job = SearchJob(criteria_json='{"query":"software engineer"}', user_id=user.id)
     session.add(job)
     session.commit()
     session.refresh(job)

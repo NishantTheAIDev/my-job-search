@@ -22,6 +22,7 @@ class ApplicationStatus(StrEnum):
 
 class Application(SQLModel, table=True):
     id: uuid.UUID = Field(default_factory=uuid.uuid4, primary_key=True)
+    user_id: uuid.UUID = Field(foreign_key="user.id", index=True)
     job_posting_id: uuid.UUID = Field(foreign_key="jobposting.id", index=True)
     resume_id: uuid.UUID = Field(foreign_key="resume.id")
     status: ApplicationStatus = ApplicationStatus.pending

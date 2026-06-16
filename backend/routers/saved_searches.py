@@ -6,12 +6,14 @@ from fastapi import APIRouter, BackgroundTasks, Depends, HTTPException, Query, R
 from pydantic import BaseModel, Field
 from sqlmodel import Session, select
 
+from backend.auth.dependencies import get_current_user
 from backend.background.tasks import start_search_task
 from backend.database import get_session
 from backend.limiter import limiter
 from backend.models.job_posting import SearchCriteria
 from backend.models.saved_search import SavedSearch
 from backend.models.search_job import SearchJob, SearchJobStatus
+from backend.models.user import User
 from backend.services.saved_search_service import diff_run
 
 logger = logging.getLogger(__name__)
@@ -60,8 +62,10 @@ def _to_response(s: SavedSearch) -> SavedSearchResponse:
 def create_saved_search(
     body: CreateSavedSearchRequest,
     session: Session = Depends(get_session),
+    current_user: User = Depends(get_current_user),
 ):
     saved = SavedSearch(
+        user_id=current_user.id,
         name=body.name.strip(),
         criteria_json=body.criteria.model_dump_json(),
     )
@@ -73,8 +77,15 @@ def create_saved_search(
 
 
 @router.get("", response_model=list[SavedSearchResponse])
-def list_saved_searches(session: Session = Depends(get_session)):
-    rows = session.exec(select(SavedSearch).order_by(SavedSearch.created_at.desc())).all()
+def list_saved_searches(
+    session: Session = Depends(get_session),
+    current_user: User = Depends(get_current_user),
+):
+    rows = session.exec(
+        select(SavedSearch)
+        .where(SavedSearch.user_id == current_user.id)
+        .order_by(SavedSearch.created_at.desc())
+    ).all()
     return [_to_response(s) for s in rows]
 
 
@@ -85,16 +96,21 @@ async def run_saved_search(
     saved_search_id: uuid.UUID,
     background_tasks: BackgroundTasks,
     session: Session = Depends(get_session),
+    current_user: User = Depends(get_current_user),
 ):
     saved = session.get(SavedSearch, saved_search_id)
-    if not saved:
+    if not saved or saved.user_id != current_user.id:
         raise HTTPException(status_code=404, detail="Saved search not found")
 
     criteria = SearchCriteria.model_validate_json(saved.criteria_json)
     # Always start a re-run from page 1 — the saved criteria's page is irrelevant.
     criteria.page = 1
 
-    search_job = SearchJob(criteria_json=criteria.model_dump_json(), created_at=datetime.now(UTC))
+    search_job = SearchJob(
+        user_id=current_user.id,
+        criteria_json=criteria.model_dump_json(),
+        created_at=datetime.now(UTC),
+    )
     session.add(search_job)
     session.commit()
     session.refresh(search_job)
@@ -123,17 +139,18 @@ def diff_saved_search(
     saved_search_id: uuid.UUID,
     search_job_id: uuid.UUID = Query(...),
     session: Session = Depends(get_session),
+    current_user: User = Depends(get_current_user),
 ):
     """Diff a completed run against the baseline and advance the baseline.
 
     Idempotent per `search_job_id` — safe to call on every poll-to-complete.
     """
     saved = session.get(SavedSearch, saved_search_id)
-    if not saved:
+    if not saved or saved.user_id != current_user.id:
         raise HTTPException(status_code=404, detail="Saved search not found")
 
     job = session.get(SearchJob, search_job_id)
-    if not job:
+    if not job or job.user_id != current_user.id:
         raise HTTPException(status_code=404, detail="Search job not found")
     if job.status != SearchJobStatus.complete:
         raise HTTPException(status_code=409, detail="Search is not complete yet")
@@ -151,9 +168,10 @@ def diff_saved_search(
 def delete_saved_search(
     saved_search_id: uuid.UUID,
     session: Session = Depends(get_session),
+    current_user: User = Depends(get_current_user),
 ):
     saved = session.get(SavedSearch, saved_search_id)
-    if not saved:
+    if not saved or saved.user_id != current_user.id:
         raise HTTPException(status_code=404, detail="Saved search not found")
     session.delete(saved)
     session.commit()

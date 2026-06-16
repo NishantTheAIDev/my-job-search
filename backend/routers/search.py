@@ -6,11 +6,13 @@ from fastapi import APIRouter, BackgroundTasks, Depends, HTTPException, Request
 from pydantic import BaseModel
 from sqlmodel import Session
 
+from backend.auth.dependencies import get_current_user
 from backend.background.tasks import start_search_task
 from backend.database import get_session
 from backend.limiter import limiter
 from backend.models.job_posting import SearchCriteria
 from backend.models.search_job import SearchJob, SearchJobStatus
+from backend.models.user import User
 
 logger = logging.getLogger(__name__)
 router = APIRouter()
@@ -37,8 +39,10 @@ async def create_search(
     criteria: SearchCriteria,
     background_tasks: BackgroundTasks,
     session: Session = Depends(get_session),
+    current_user: User = Depends(get_current_user),
 ):
     search_job = SearchJob(
+        user_id=current_user.id,
         criteria_json=criteria.model_dump_json(),
         created_at=datetime.now(UTC),
     )
@@ -61,9 +65,10 @@ async def create_search(
 def get_search_status(
     job_id: uuid.UUID,
     session: Session = Depends(get_session),
+    current_user: User = Depends(get_current_user),
 ):
     job = session.get(SearchJob, job_id)
-    if not job:
+    if not job or job.user_id != current_user.id:
         raise HTTPException(status_code=404, detail="Search job not found")
     return SearchStatusResponse(
         job_id=job.id,

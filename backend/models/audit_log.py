@@ -6,6 +6,7 @@ from sqlmodel import Field, SQLModel
 
 class AuditLog(SQLModel, table=True):
     id: uuid.UUID = Field(default_factory=uuid.uuid4, primary_key=True)
+    user_id: uuid.UUID = Field(foreign_key="user.id", index=True)
     application_id: uuid.UUID = Field(foreign_key="application.id", index=True)
     action: str
     actor: str = "user"

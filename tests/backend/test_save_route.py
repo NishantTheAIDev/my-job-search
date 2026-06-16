@@ -4,8 +4,8 @@
 - GET  /applications/saved
 """
 
-import io
 import uuid
+from datetime import UTC, datetime, timedelta
 
 from fastapi.testclient import TestClient
 from sqlmodel import Session
@@ -13,22 +13,22 @@ from sqlmodel import Session
 from backend.models.application import Application, ApplicationStatus
 from backend.models.job_posting import JobPosting, RemoteStatus
 from backend.models.resume import Resume
+from backend.models.user import User
 
 # ---------------------------------------------------------------------------
-# Seed helpers
+# Seed helpers — rows are stamped with the user the client authenticates as.
 # ---------------------------------------------------------------------------
 
 
-def _upload_resume(client: TestClient) -> None:
-    content = b"John Doe\nSoftware Engineer"
-    client.post(
-        "/resume/upload",
-        files={"file": ("resume.txt", io.BytesIO(content), "text/plain")},
-    )
-
-
-def _make_posting(session: Session, *, title: str = "Software Engineer", company: str = "Acme") -> JobPosting:
+def _make_posting(
+    session: Session,
+    user_id: uuid.UUID,
+    *,
+    title: str = "Software Engineer",
+    company: str = "Acme",
+) -> JobPosting:
     posting = JobPosting(
+        user_id=user_id,
         source="test",
         source_job_id=str(uuid.uuid4()),
         title=title,
@@ -44,8 +44,9 @@ def _make_posting(session: Session, *, title: str = "Software Engineer", company
     return posting
 
 
-def _make_resume(session: Session) -> Resume:
+def _make_resume(session: Session, user_id: uuid.UUID) -> Resume:
     resume = Resume(
+        user_id=user_id,
         filename="test.txt",
         file_path="/tmp/test.txt",
         text_content="John Doe, Software Engineer",
@@ -57,10 +58,11 @@ def _make_resume(session: Session) -> Resume:
     return resume
 
 
-def _make_pending_app(session: Session, *, match_score: int = 80) -> Application:
-    posting = _make_posting(session)
-    resume = _make_resume(session)
+def _make_pending_app(session: Session, user_id: uuid.UUID, *, match_score: int = 80) -> Application:
+    posting = _make_posting(session, user_id)
+    resume = _make_resume(session, user_id)
     app = Application(
+        user_id=user_id,
         job_posting_id=posting.id,
         resume_id=resume.id,
         status=ApplicationStatus.pending,
@@ -76,13 +78,18 @@ def _make_pending_app(session: Session, *, match_score: int = 80) -> Application
     return app
 
 
-def _make_saved_app(session: Session, *, match_score: int = 75, title: str = "Software Engineer", company: str = "Acme") -> Application:
-    """Create a posting + resume + application already in saved state."""
-    posting = _make_posting(session, title=title, company=company)
-    resume = _make_resume(session)
-    from datetime import UTC, datetime
-
+def _make_saved_app(
+    session: Session,
+    user_id: uuid.UUID,
+    *,
+    match_score: int = 75,
+    title: str = "Software Engineer",
+    company: str = "Acme",
+) -> Application:
+    posting = _make_posting(session, user_id, title=title, company=company)
+    resume = _make_resume(session, user_id)
     app = Application(
+        user_id=user_id,
         job_posting_id=posting.id,
         resume_id=resume.id,
         status=ApplicationStatus.saved,
@@ -106,9 +113,9 @@ def _make_saved_app(session: Session, *, match_score: int = 75, title: str = "So
 
 class TestSaveRoute:
     def test_save_pending_returns_200_and_saved_status(
-        self, client: TestClient, session: Session
+        self, client: TestClient, session: Session, user: User
     ):
-        app = _make_pending_app(session)
+        app = _make_pending_app(session, user.id)
         response = client.post(f"/applications/{app.id}/save")
         assert response.status_code == 200
         data = response.json()
@@ -116,36 +123,36 @@ class TestSaveRoute:
         assert data["saved_at"] is not None
 
     def test_save_pending_match_gaps_decoded_in_response(
-        self, client: TestClient, session: Session
+        self, client: TestClient, session: Session, user: User
     ):
         """ApplicationResponse.match_gaps must be a list, not a raw JSON string."""
-        app = _make_pending_app(session)
+        app = _make_pending_app(session, user.id)
         response = client.post(f"/applications/{app.id}/save")
         assert response.status_code == 200
         gaps = response.json()["match_gaps"]
         assert isinstance(gaps, list)
         assert gaps == ["Docker"]
 
-    def test_save_non_pending_returns_409(self, client: TestClient, session: Session):
-        app = _make_pending_app(session)
-        # First save succeeds.
+    def test_save_non_pending_returns_409(self, client: TestClient, session: Session, user: User):
+        app = _make_pending_app(session, user.id)
         client.post(f"/applications/{app.id}/save")
-        # Second call is a 409 (already saved / non-pending).
-        response = client.post(f"/applications/{app.id}/save")
-        assert response.status_code == 409
-
-    def test_save_submitted_app_returns_409(self, client: TestClient, session: Session):
-        app = _make_pending_app(session)
-        app.status = ApplicationStatus.submitted
-        session.add(app)
-        session.commit()
-
         response = client.post(f"/applications/{app.id}/save")
         assert response.status_code == 409
 
     def test_save_unknown_id_returns_404(self, client: TestClient):
         response = client.post(f"/applications/{uuid.uuid4()}/save")
         assert response.status_code == 404
+
+    def test_save_other_users_app_returns_404(
+        self, session: Session, user: User, other_user: User, make_client: object
+    ):
+        """Cross-tenant: B saving A's application gets 404, and it stays pending."""
+        app = _make_pending_app(session, user.id)
+        client_b = make_client(other_user)
+        response = client_b.post(f"/applications/{app.id}/save")
+        assert response.status_code == 404
+        session.refresh(app)
+        assert app.status == ApplicationStatus.pending
 
 
 # ---------------------------------------------------------------------------
@@ -159,10 +166,9 @@ class TestListSavedRoute:
         assert response.status_code == 200
         assert response.json() == []
 
-    def test_returns_saved_apps_only(self, client: TestClient, session: Session):
-        _make_saved_app(session, title="ML Engineer", company="BrainCo")
-        # Also create a pending app — must not appear in the saved list.
-        _make_pending_app(session)
+    def test_returns_saved_apps_only(self, client: TestClient, session: Session, user: User):
+        _make_saved_app(session, user.id, title="ML Engineer", company="BrainCo")
+        _make_pending_app(session, user.id)
 
         response = client.get("/applications/saved")
         assert response.status_code == 200
@@ -171,32 +177,27 @@ class TestListSavedRoute:
         assert items[0]["job_title"] == "ML Engineer"
         assert items[0]["company"] == "BrainCo"
 
-    def test_response_shape(self, client: TestClient, session: Session):
-        _make_saved_app(session, match_score=88, title="Data Engineer", company="DataCo")
+    def test_response_shape(self, client: TestClient, session: Session, user: User):
+        _make_saved_app(session, user.id, match_score=88, title="Data Engineer", company="DataCo")
 
         response = client.get("/applications/saved")
         assert response.status_code == 200
         item = response.json()[0]
-        assert "id" in item
-        assert "job_title" in item
-        assert "company" in item
-        assert "match_score" in item
-        assert "saved_at" in item
+        assert {"id", "job_title", "company", "match_score", "saved_at"} <= item.keys()
         assert item["match_score"] == 88
 
-    def test_newest_saved_first(self, client: TestClient, session: Session):
+    def test_newest_saved_first(self, client: TestClient, session: Session, user: User):
         """Saved apps must be ordered by saved_at descending (newest first)."""
-        from datetime import UTC, datetime, timedelta
-
-        posting1 = _make_posting(session, title="First Job", company="Alpha")
-        resume = _make_resume(session)
-        posting2 = _make_posting(session, title="Second Job", company="Beta")
-        resume2 = _make_resume(session)
+        posting1 = _make_posting(session, user.id, title="First Job", company="Alpha")
+        resume = _make_resume(session, user.id)
+        posting2 = _make_posting(session, user.id, title="Second Job", company="Beta")
+        resume2 = _make_resume(session, user.id)
 
         earlier = datetime.now(UTC) - timedelta(hours=2)
         later = datetime.now(UTC)
 
         app1 = Application(
+            user_id=user.id,
             job_posting_id=posting1.id,
             resume_id=resume.id,
             status=ApplicationStatus.saved,
@@ -208,6 +209,7 @@ class TestListSavedRoute:
             saved_at=earlier,
         )
         app2 = Application(
+            user_id=user.id,
             job_posting_id=posting2.id,
             resume_id=resume2.id,
             status=ApplicationStatus.saved,
@@ -226,6 +228,15 @@ class TestListSavedRoute:
         assert response.status_code == 200
         items = response.json()
         assert len(items) == 2
-        # Newest (Second Job / Beta) must come first
         assert items[0]["job_title"] == "Second Job"
         assert items[1]["job_title"] == "First Job"
+
+    def test_saved_list_is_per_user(
+        self, session: Session, user: User, other_user: User, make_client: object
+    ):
+        """User B must not see user A's saved applications."""
+        _make_saved_app(session, user.id, title="A's job", company="ACo")
+        client_b = make_client(other_user)
+        response = client_b.get("/applications/saved")
+        assert response.status_code == 200
+        assert response.json() == []

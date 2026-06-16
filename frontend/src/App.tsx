@@ -1,5 +1,7 @@
 import { QueryClient, QueryClientProvider } from '@tanstack/react-query'
 import { useJobSearchStore } from './store/useJobSearchStore'
+import { useAuthStore } from './store/useAuthStore'
+import { AuthPage } from './components/Auth/AuthPage'
 import { LandingPage } from './components/Landing/LandingPage'
 import { ResultsView } from './components/Results/ResultsView'
 import { JobDetailSlideOver } from './components/Results/JobDetailSlideOver'
@@ -77,10 +79,16 @@ function AppLayout() {
   )
 }
 
+function AuthGate() {
+  const token = useAuthStore((s) => s.token)
+  if (!token) return <AuthPage />
+  return <AppLayout />
+}
+
 function App() {
   return (
     <QueryClientProvider client={queryClient}>
-      <AppLayout />
+      <AuthGate />
     </QueryClientProvider>
   )
 }

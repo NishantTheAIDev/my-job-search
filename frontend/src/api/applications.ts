@@ -22,11 +22,6 @@ export async function getApplicationByJob(jobPostingId: string): Promise<Applica
 // "still preparing" wait at ~3 minutes before surfacing an error.
 export const PREPARE_POLL_MAX_RETRIES = 90
 
-export async function approveApplication(id: string): Promise<ApplicationResponse> {
-  const response = await api.post<ApplicationResponse>(`/applications/${id}/approve`)
-  return response.data
-}
-
 export async function rejectApplication(id: string): Promise<ApplicationResponse> {
   const response = await api.post<ApplicationResponse>(`/applications/${id}/reject`)
   return response.data

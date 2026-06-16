@@ -17,6 +17,7 @@ from sqlmodel import Session
 from backend.models.application import Application, ApplicationStatus
 from backend.models.job_posting import JobPosting, RemoteStatus
 from backend.models.resume import Resume
+from backend.models.user import User
 from backend.routers.exports import _DOCX_MEDIA_TYPE
 from backend.services.rendercv_service import RenderError
 
@@ -28,10 +29,12 @@ _FAKE_CL_YAML = "cv:\n  name: Test\n  sections:\n    Cover Letter:\n      - Para
 
 def _make_full_app(
     session: Session,
+    user_id,
     resume_data_yaml: str = "",
     cover_letter_data_yaml: str = "",
 ) -> Application:
     posting = JobPosting(
+        user_id=user_id,
         source="test",
         source_job_id=str(uuid.uuid4()),
         title="Backend Engineer",
@@ -45,6 +48,7 @@ def _make_full_app(
     session.refresh(posting)
 
     resume = Resume(
+        user_id=user_id,
         filename="r.txt",
         file_path="/tmp/r.txt",
         text_content="Test resume text",
@@ -54,6 +58,7 @@ def _make_full_app(
     session.refresh(resume)
 
     app = Application(
+        user_id=user_id,
         job_posting_id=posting.id,
         resume_id=resume.id,
         status=ApplicationStatus.pending,
@@ -73,9 +78,9 @@ def _make_full_app(
 # ---------------------------------------------------------------------------
 
 
-def test_resume_pdf_reportlab_fallback_when_yaml_empty(client: TestClient, session: Session):
+def test_resume_pdf_reportlab_fallback_when_yaml_empty(client: TestClient, session: Session, user: User):
     """When resume_data_yaml is empty the reportlab path must still produce a PDF."""
-    app = _make_full_app(session, resume_data_yaml="")
+    app = _make_full_app(session, user.id, resume_data_yaml="")
     response = client.get(f"/applications/{app.id}/resume.pdf")
     assert response.status_code == 200
     assert response.headers["content-type"] == "application/pdf"
@@ -87,10 +92,10 @@ def test_resume_pdf_reportlab_fallback_when_yaml_empty(client: TestClient, sessi
 # ---------------------------------------------------------------------------
 
 
-def test_resume_pdf_uses_rendercv_when_yaml_present(client: TestClient, session: Session):
+def test_resume_pdf_uses_rendercv_when_yaml_present(client: TestClient, session: Session, user: User):
     """When resume_data_yaml is non-empty, render_pdf should be called and its bytes returned."""
     fake_pdf = b"%PDF-1.4 rendercv-produced-content"
-    app = _make_full_app(session, resume_data_yaml=_FAKE_RESUME_YAML)
+    app = _make_full_app(session, user.id, resume_data_yaml=_FAKE_RESUME_YAML)
 
     with patch(
         "backend.routers.exports._rendercv_render_pdf", return_value=fake_pdf
@@ -108,9 +113,9 @@ def test_resume_pdf_uses_rendercv_when_yaml_present(client: TestClient, session:
 # ---------------------------------------------------------------------------
 
 
-def test_resume_pdf_falls_back_to_reportlab_on_render_error(client: TestClient, session: Session):
+def test_resume_pdf_falls_back_to_reportlab_on_render_error(client: TestClient, session: Session, user: User):
     """If rendercv raises RenderError the route must fall back to reportlab, not 500."""
-    app = _make_full_app(session, resume_data_yaml=_FAKE_RESUME_YAML)
+    app = _make_full_app(session, user.id, resume_data_yaml=_FAKE_RESUME_YAML)
 
     with patch(
         "backend.routers.exports._rendercv_render_pdf",
@@ -129,12 +134,12 @@ def test_resume_pdf_falls_back_to_reportlab_on_render_error(client: TestClient, 
 # ---------------------------------------------------------------------------
 
 
-def test_resume_pdf_theme_swaps_design_theme(client: TestClient, session: Session):
+def test_resume_pdf_theme_swaps_design_theme(client: TestClient, session: Session, user: User):
     """A valid ?theme= must rewrite design.theme in the YAML passed to rendercv."""
     import yaml
 
     fake_pdf = b"%PDF-1.4 themed"
-    app = _make_full_app(session, resume_data_yaml=_FAKE_RESUME_YAML)
+    app = _make_full_app(session, user.id, resume_data_yaml=_FAKE_RESUME_YAML)
 
     with patch(
         "backend.routers.exports._rendercv_render_pdf", return_value=fake_pdf
@@ -147,16 +152,16 @@ def test_resume_pdf_theme_swaps_design_theme(client: TestClient, session: Sessio
     assert yaml.safe_load(rendered_yaml)["design"]["theme"] == "moderncv"
 
 
-def test_resume_pdf_rejects_unknown_theme(client: TestClient, session: Session):
-    app = _make_full_app(session, resume_data_yaml=_FAKE_RESUME_YAML)
+def test_resume_pdf_rejects_unknown_theme(client: TestClient, session: Session, user: User):
+    app = _make_full_app(session, user.id, resume_data_yaml=_FAKE_RESUME_YAML)
     response = client.get(f"/applications/{app.id}/resume.pdf?theme=not-a-real-theme")
     assert response.status_code == 400
 
 
-def test_resume_pdf_no_theme_keeps_stored_yaml(client: TestClient, session: Session):
+def test_resume_pdf_no_theme_keeps_stored_yaml(client: TestClient, session: Session, user: User):
     """Without ?theme=, the stored YAML is passed through unchanged."""
     fake_pdf = b"%PDF-1.4 default"
-    app = _make_full_app(session, resume_data_yaml=_FAKE_RESUME_YAML)
+    app = _make_full_app(session, user.id, resume_data_yaml=_FAKE_RESUME_YAML)
 
     with patch(
         "backend.routers.exports._rendercv_render_pdf", return_value=fake_pdf
@@ -167,9 +172,9 @@ def test_resume_pdf_no_theme_keeps_stored_yaml(client: TestClient, session: Sess
     assert mock_render.call_args.args[0] == _FAKE_RESUME_YAML
 
 
-def test_resume_docx_ignores_theme(client: TestClient, session: Session):
+def test_resume_docx_ignores_theme(client: TestClient, session: Session, user: User):
     """The .docx export has no theme concept; a theme param must not break it."""
-    app = _make_full_app(session, resume_data_yaml=_FAKE_RESUME_YAML)
+    app = _make_full_app(session, user.id, resume_data_yaml=_FAKE_RESUME_YAML)
     response = client.get(f"/applications/{app.id}/resume.docx?theme=moderncv")
     assert response.status_code == 200
     assert response.headers["content-type"] == _DOCX_MEDIA_TYPE
@@ -180,8 +185,8 @@ def test_resume_docx_ignores_theme(client: TestClient, session: Session):
 # ---------------------------------------------------------------------------
 
 
-def test_cover_letter_pdf_reportlab_fallback_when_yaml_empty(client: TestClient, session: Session):
-    app = _make_full_app(session, cover_letter_data_yaml="")
+def test_cover_letter_pdf_reportlab_fallback_when_yaml_empty(client: TestClient, session: Session, user: User):
+    app = _make_full_app(session, user.id, cover_letter_data_yaml="")
     response = client.get(f"/applications/{app.id}/cover-letter.pdf")
     assert response.status_code == 200
     assert response.headers["content-type"] == "application/pdf"
@@ -193,9 +198,9 @@ def test_cover_letter_pdf_reportlab_fallback_when_yaml_empty(client: TestClient,
 # ---------------------------------------------------------------------------
 
 
-def test_cover_letter_pdf_uses_rendercv_when_yaml_present(client: TestClient, session: Session):
+def test_cover_letter_pdf_uses_rendercv_when_yaml_present(client: TestClient, session: Session, user: User):
     fake_pdf = b"%PDF-1.4 cl-content"
-    app = _make_full_app(session, cover_letter_data_yaml=_FAKE_CL_YAML)
+    app = _make_full_app(session, user.id, cover_letter_data_yaml=_FAKE_CL_YAML)
 
     with patch(
         "backend.routers.exports._rendercv_render_pdf", return_value=fake_pdf
@@ -212,8 +217,8 @@ def test_cover_letter_pdf_uses_rendercv_when_yaml_present(client: TestClient, se
 # ---------------------------------------------------------------------------
 
 
-def test_cover_letter_pdf_falls_back_on_render_error(client: TestClient, session: Session):
-    app = _make_full_app(session, cover_letter_data_yaml=_FAKE_CL_YAML)
+def test_cover_letter_pdf_falls_back_on_render_error(client: TestClient, session: Session, user: User):
+    app = _make_full_app(session, user.id, cover_letter_data_yaml=_FAKE_CL_YAML)
 
     with patch(
         "backend.routers.exports._rendercv_render_pdf",
@@ -245,8 +250,8 @@ def test_cover_letter_pdf_not_found(client: TestClient):
 # ---------------------------------------------------------------------------
 
 
-def test_resume_pdf_filename_contains_company_and_title(client: TestClient, session: Session):
-    app = _make_full_app(session, resume_data_yaml="")
+def test_resume_pdf_filename_contains_company_and_title(client: TestClient, session: Session, user: User):
+    app = _make_full_app(session, user.id, resume_data_yaml="")
     response = client.get(f"/applications/{app.id}/resume.pdf")
     assert response.status_code == 200
     disposition = response.headers["content-disposition"]
@@ -254,8 +259,8 @@ def test_resume_pdf_filename_contains_company_and_title(client: TestClient, sess
     assert "Backend_Engineer" in disposition
 
 
-def test_cover_letter_pdf_filename_contains_company_and_title(client: TestClient, session: Session):
-    app = _make_full_app(session, cover_letter_data_yaml="")
+def test_cover_letter_pdf_filename_contains_company_and_title(client: TestClient, session: Session, user: User):
+    app = _make_full_app(session, user.id, cover_letter_data_yaml="")
     response = client.get(f"/applications/{app.id}/cover-letter.pdf")
     assert response.status_code == 200
     disposition = response.headers["content-disposition"]

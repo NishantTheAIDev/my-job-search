@@ -15,6 +15,7 @@ from sqlmodel import Session
 from backend.models.job_posting import JobPosting
 from backend.models.saved_search import SavedSearch
 from backend.models.search_job import SearchJob, SearchJobStatus
+from backend.models.user import User
 from backend.services.saved_search_service import (
     compute_new_ids,
     diff_run,
@@ -26,9 +27,10 @@ from backend.services.saved_search_service import (
 # ---------------------------------------------------------------------------
 
 
-def _make_completed_run(session: Session, *keys: tuple[str, str]) -> uuid.UUID:
+def _make_completed_run(session: Session, user_id, *keys: tuple[str, str]) -> uuid.UUID:
     """Create a complete SearchJob with one JobPosting per (source, source_job_id)."""
     job = SearchJob(
+        user_id=user_id,
         criteria_json='{"query": "ai engineer"}',
         status=SearchJobStatus.complete,
         created_at=datetime.now(UTC),
@@ -41,6 +43,7 @@ def _make_completed_run(session: Session, *keys: tuple[str, str]) -> uuid.UUID:
     for source, sjid in keys:
         session.add(
             JobPosting(
+                user_id=user_id,
                 search_job_id=job.id,
                 source=source,
                 source_job_id=sjid,
@@ -53,8 +56,9 @@ def _make_completed_run(session: Session, *keys: tuple[str, str]) -> uuid.UUID:
     return job.id
 
 
-def _make_saved(session: Session, **kwargs) -> SavedSearch:
+def _make_saved(session: Session, user_id, **kwargs) -> SavedSearch:
     saved = SavedSearch(
+        user_id=user_id,
         name=kwargs.pop("name", "My AI search"),
         criteria_json=kwargs.pop("criteria_json", '{"query": "ai engineer"}'),
         **kwargs,
@@ -92,9 +96,9 @@ def test_compute_new_ids_all_new_when_baseline_empty():
 # ---------------------------------------------------------------------------
 
 
-def test_diff_run_first_run_reports_no_new_but_sets_baseline(session: Session):
-    saved = _make_saved(session)
-    job_id = _make_completed_run(session, ("a", "1"), ("a", "2"))
+def test_diff_run_first_run_reports_no_new_but_sets_baseline(session: Session, user: User):
+    saved = _make_saved(session, user.id)
+    job_id = _make_completed_run(session, user.id, ("a", "1"), ("a", "2"))
 
     new_ids, is_first_run = diff_run(saved, job_id, session)
 
@@ -105,12 +109,12 @@ def test_diff_run_first_run_reports_no_new_but_sets_baseline(session: Session):
     assert saved.last_diffed_job_id == job_id
 
 
-def test_diff_run_second_run_flags_only_new(session: Session):
-    saved = _make_saved(session)
-    first = _make_completed_run(session, ("a", "1"), ("a", "2"))
+def test_diff_run_second_run_flags_only_new(session: Session, user: User):
+    saved = _make_saved(session, user.id)
+    first = _make_completed_run(session, user.id, ("a", "1"), ("a", "2"))
     diff_run(saved, first, session)  # establish baseline {a::1, a::2}
 
-    second = _make_completed_run(session, ("a", "1"), ("a", "3"), ("b", "9"))
+    second = _make_completed_run(session, user.id, ("a", "1"), ("a", "3"), ("b", "9"))
     new_ids, is_first_run = diff_run(saved, second, session)
 
     assert is_first_run is False
@@ -119,12 +123,12 @@ def test_diff_run_second_run_flags_only_new(session: Session):
     assert set(json.loads(saved.seen_keys_json)) == {"a::1", "a::3", "b::9"}
 
 
-def test_diff_run_is_idempotent_for_same_run(session: Session):
-    saved = _make_saved(session)
-    first = _make_completed_run(session, ("a", "1"))
+def test_diff_run_is_idempotent_for_same_run(session: Session, user: User):
+    saved = _make_saved(session, user.id)
+    first = _make_completed_run(session, user.id, ("a", "1"))
     diff_run(saved, first, session)
 
-    second = _make_completed_run(session, ("a", "1"), ("a", "2"))
+    second = _make_completed_run(session, user.id, ("a", "1"), ("a", "2"))
     new_first_call, _ = diff_run(saved, second, session)
     baseline_after_first = saved.seen_keys_json
 
@@ -213,16 +217,16 @@ def test_run_missing_saved_search_returns_404(client: TestClient):
     assert resp.status_code == 404
 
 
-def test_diff_endpoint_flags_new_postings(client: TestClient, session: Session):
-    saved = _make_saved(session)
-    first = _make_completed_run(session, ("a", "1"))
+def test_diff_endpoint_flags_new_postings(client: TestClient, session: Session, user: User):
+    saved = _make_saved(session, user.id)
+    first = _make_completed_run(session, user.id, ("a", "1"))
     # First diff establishes baseline (no-new).
     r1 = client.post(f"/saved-searches/{saved.id}/diff?search_job_id={first}")
     assert r1.status_code == 200
     assert r1.json()["is_first_run"] is True
     assert r1.json()["new_count"] == 0
 
-    second = _make_completed_run(session, ("a", "1"), ("a", "2"))
+    second = _make_completed_run(session, user.id, ("a", "1"), ("a", "2"))
     r2 = client.post(f"/saved-searches/{saved.id}/diff?search_job_id={second}")
     assert r2.status_code == 200
     body = r2.json()
@@ -231,9 +235,10 @@ def test_diff_endpoint_flags_new_postings(client: TestClient, session: Session):
     assert body["is_first_run"] is False
 
 
-def test_diff_endpoint_rejects_incomplete_run(client: TestClient, session: Session):
-    saved = _make_saved(session)
+def test_diff_endpoint_rejects_incomplete_run(client: TestClient, session: Session, user: User):
+    saved = _make_saved(session, user.id)
     job = SearchJob(
+        user_id=user.id,
         criteria_json='{"query": "x"}',
         status=SearchJobStatus.running,
         created_at=datetime.now(UTC),
@@ -246,7 +251,7 @@ def test_diff_endpoint_rejects_incomplete_run(client: TestClient, session: Sessi
     assert resp.status_code == 409
 
 
-def test_diff_endpoint_missing_search_job_returns_404(client: TestClient, session: Session):
-    saved = _make_saved(session)
+def test_diff_endpoint_missing_search_job_returns_404(client: TestClient, session: Session, user: User):
+    saved = _make_saved(session, user.id)
     resp = client.post(f"/saved-searches/{saved.id}/diff?search_job_id={uuid.uuid4()}")
     assert resp.status_code == 404
