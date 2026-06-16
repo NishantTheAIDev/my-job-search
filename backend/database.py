@@ -27,6 +27,11 @@ _ADDITIVE_COLUMNS: dict[str, dict[str, str]] = {
         # Phase 1 relevance scoring — nullable, so no NOT NULL/default needed.
         "relevance_score": "INTEGER",
     },
+    "searchjob": {
+        # Phase 2 progress counters.
+        "completed_adapters": "INTEGER NOT NULL DEFAULT 0",
+        "total_adapters": "INTEGER NOT NULL DEFAULT 0",
+    },
 }
 
 

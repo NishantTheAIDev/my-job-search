@@ -58,6 +58,8 @@ describe('ResultsList', () => {
       status: 'running',
       total_results: null,
       error: null,
+      completed_adapters: 0,
+      total_adapters: 11,
     })
 
     useJobSearchStore.setState({ activeSearchJobId: 'search-1' })
@@ -74,6 +76,8 @@ describe('ResultsList', () => {
       status: 'queued',
       total_results: null,
       error: null,
+      completed_adapters: 0,
+      total_adapters: 0,
     })
 
     useJobSearchStore.setState({ activeSearchJobId: 'search-1' })
@@ -90,6 +94,8 @@ describe('ResultsList', () => {
       status: 'complete',
       total_results: 0,
       error: null,
+      completed_adapters: 11,
+      total_adapters: 11,
     })
     mockListJobs.mockResolvedValue({ items: [], total: 0, page: 1, page_size: 20 })
     mockGetJobFilters.mockResolvedValue({ sources: [], companies: [] })
@@ -108,6 +114,8 @@ describe('ResultsList', () => {
       status: 'complete',
       total_results: 1,
       error: null,
+      completed_adapters: 11,
+      total_adapters: 11,
     })
     mockListJobs.mockResolvedValue({ items: [sampleJob], total: 1, page: 1, page_size: 20 })
     mockGetJobFilters.mockResolvedValue({ sources: ['greenhouse'], companies: ['Acme Corp'] })

@@ -2,12 +2,25 @@
 
 Pure function — no I/O, no LLM calls, unit-testable in isolation.
 
-Score range: 0–100.
-  - Head noun NOT in title  → 5   (off-role floor; this is the off-role killer)
-  - Head noun IN title      → 50 base
-      + 10 per modifier found in the TITLE
-      capped at 100.
-  - Empty query             → 50 for everything (neutral; don't drop anything).
+Score range: 0–100, in three bands:
+  - Head noun IN title              → 50 base + 10 per modifier in title, cap 100.
+  - Head noun NOT in title, but the
+    title carries a DIFFERENT but
+    related tech role noun           → 35 base + 5 per modifier in title, cap 49
+    (the "soft related-role tier").  (AI/ML titles use Engineer / Architect /
+    Scientist / Lead interchangeably, so an "AI engineer" search should
+    surface "AI Architect" or "Data Scientist" — ranked below true in-role matches
+    but above the off-role floor, and above the default min_relevance filter.)
+  - Otherwise (off-role)             → 5   (the off-role killer).
+  - Empty query                      → 50 for everything (neutral; don't drop anything).
+
+The three bands never overlap: off-role 5 < related 35–49 < in-role 50–100, so a
+related-role title can never outrank a true in-role title.
+
+Matching tolerates common word-form suffixes (`engineer` matches `Engineering`,
+`developer` matches `developers`) for alphabetic terms of length ≥ 4 — short
+abbreviations (`go`, `ai`, `be`) are NOT suffix-expanded so `go` never matches
+`going`.
 
 Scoring is **title-only**. The description is intentionally NOT used: a
 description boost silently rewarded boards that return JD text (Adzuna, Indeed)
@@ -130,16 +143,53 @@ SYNONYM_LOOKUP: dict[str, frozenset[str]] = {
     term: group for group in SYNONYM_GROUPS for term in group
 }
 
+# Technical IC/role family used for the soft related-role tier. When the query's
+# head noun is one of these and the title carries a DIFFERENT member, the posting
+# scores in the related band (below in-role, above the off-role floor) instead of
+# flooring. Deliberately excludes management/ops/creative nouns (manager, director,
+# recruiter, designer, …) so "engineer" doesn't softly match "Recruiter".
+TECH_ROLE_FAMILY: frozenset[str] = frozenset(
+    {
+        "engineer",
+        "developer",
+        "programmer",
+        "scientist",
+        "architect",
+        "researcher",
+        "lead",
+    }
+)
+# NOTE: deliberately omits generic nouns like "specialist" / "analyst" / "manager"
+# — they appear in unrelated roles (Marketing Specialist, Financial Analyst) and
+# would pollute the related tier. "lead" is kept (Data Science Lead) by intent.
+
 # Scoring constants — named so the test engineer can import them.
 _BASE_SCORE = 50
 _TITLE_MODIFIER_BOOST = 10
 _OFF_ROLE_FLOOR = 5
 _NEUTRAL_SCORE = 50
+# Soft related-role tier (different-but-related role noun in title).
+_RELATED_ROLE_SCORE = 35
+_RELATED_MODIFIER_BOOST = 5
+_RELATED_ROLE_CAP = 49  # keep related strictly below the in-role base of 50
+
+# Suffix tolerance for whole-word matching: lets "engineer" match "Engineering"
+# / "engineers". Only applied to alphabetic terms of length ≥ 4 so short
+# abbreviations ("go", "ai", "be") never match "going" / "available" / "being".
+_MIN_SUFFIX_LEN = 4
+_SUFFIX_RE = r"(?:s|ed|ing)?"
 
 
 def _word_in_text(word: str, text: str) -> bool:
-    """Return True if *word* appears as a whole word/phrase in *text* (case-insensitive)."""
-    return bool(re.search(r"\b" + re.escape(word) + r"\b", text, re.IGNORECASE))
+    """Return True if *word* appears as a whole word/phrase in *text* (case-insensitive).
+
+    Alphabetic terms of length ≥ 4 also match common inflected forms
+    (plural / -ed / -ing), so "engineer" matches "Engineering".
+    """
+    pattern = re.escape(word)
+    if len(word) >= _MIN_SUFFIX_LEN and word.isalpha():
+        pattern += _SUFFIX_RE
+    return bool(re.search(r"\b" + pattern + r"\b", text, re.IGNORECASE))
 
 
 def _expand(term: str) -> frozenset[str]:
@@ -150,6 +200,19 @@ def _expand(term: str) -> frozenset[str]:
 def _term_in_text(term: str, text: str) -> bool:
     """True if *term* or any of its synonyms appears as a whole word/phrase in *text*."""
     return any(_word_in_text(syn, text) for syn in _expand(term))
+
+
+def _title_has_related_role(title: str, exclude: str) -> bool:
+    """True if *title* carries a tech role noun OTHER than *exclude*'s family.
+
+    Used for the soft related-role tier: the head noun itself was already found
+    absent from the title, so any family member present here is a *different*
+    role (Architect / Scientist / Lead …).
+    """
+    exclude_group = _expand(exclude)
+    return any(
+        role not in exclude_group and _term_in_text(role, title) for role in TECH_ROLE_FAMILY
+    )
 
 
 def _parse_query(query: str) -> tuple[str, list[str]]:
@@ -204,6 +267,15 @@ def score_relevance(title: str, description: str, query: str) -> int:
 
     # Gate: head noun (or a synonym) must appear in the title.
     if not _term_in_text(head_noun, title):
+        # Soft related-role tier: the head noun is a tech role and the title
+        # carries a *different* tech role noun (Architect / Scientist / Lead …).
+        # Score below the in-role base but above the off-role floor.
+        if head_noun in TECH_ROLE_FAMILY and _title_has_related_role(title, head_noun):
+            score = _RELATED_ROLE_SCORE
+            for mod in modifiers:
+                if _term_in_text(mod, title):
+                    score += _RELATED_MODIFIER_BOOST
+            return min(score, _RELATED_ROLE_CAP)
         return _OFF_ROLE_FLOOR
 
     # Head noun is in title — start from base and boost per modifier in title.

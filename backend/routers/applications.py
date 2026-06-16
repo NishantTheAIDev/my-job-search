@@ -61,7 +61,7 @@ def _to_response(app: Application) -> ApplicationResponse:
         gaps: list[str] = json.loads(app.match_gaps)
         if not isinstance(gaps, list):
             gaps = []
-    except (json.JSONDecodeError, TypeError):
+    except json.JSONDecodeError, TypeError:
         gaps = []
     return ApplicationResponse(
         id=app.id,

@@ -32,6 +32,7 @@ export function LandingPage() {
   const setShowInsights = useJobSearchStore((s) => s.setShowInsights)
   const setShowPasteJd = useJobSearchStore((s) => s.setShowPasteJd)
   const setShowSavedApplications = useJobSearchStore((s) => s.setShowSavedApplications)
+  const setShowSavedSearches = useJobSearchStore((s) => s.setShowSavedSearches)
 
   return (
     <div className="min-h-full bg-slate-50">
@@ -48,6 +49,16 @@ export function LandingPage() {
               <path strokeLinecap="round" strokeLinejoin="round" d="M19.5 14.25v-2.625a3.375 3.375 0 0 0-3.375-3.375h-1.5A1.125 1.125 0 0 1 13.5 7.125v-1.5a3.375 3.375 0 0 0-3.375-3.375H8.25m0 12.75h7.5m-7.5 3H12M10.5 2.25H5.625c-.621 0-1.125.504-1.125 1.125v17.25c0 .621.504 1.125 1.125 1.125h12.75c.621 0 1.125-.504 1.125-1.125V11.25a9 9 0 0 0-9-9Z" />
             </svg>
             Tailor from JD
+          </button>
+          <button
+            onClick={() => setShowSavedSearches(true)}
+            className="inline-flex items-center gap-1.5 rounded-lg border border-slate-200 px-3 py-2 text-[12px] font-medium text-slate-600 transition hover:border-indigo-300 hover:bg-indigo-50 hover:text-indigo-700 focus:outline-none focus:ring-2 focus:ring-indigo-500"
+            aria-label="View saved searches"
+          >
+            <svg className="h-3.5 w-3.5" fill="none" stroke="currentColor" strokeWidth={2} viewBox="0 0 24 24" aria-hidden="true">
+              <path strokeLinecap="round" strokeLinejoin="round" d="m21 21-5.197-5.197m0 0A7.5 7.5 0 1 0 5.196 5.196a7.5 7.5 0 0 0 10.607 10.607Z" />
+            </svg>
+            Saved Searches
           </button>
           <button
             onClick={() => setShowSavedApplications(true)}

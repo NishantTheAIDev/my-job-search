@@ -11,6 +11,8 @@ interface JobCardProps {
   job: JobPosting
   onShowDetail: () => void
   isSelected?: boolean
+  // Flagged "new since last run" by a saved-search re-run diff.
+  isNew?: boolean
 }
 
 const REMOTE_STATUS_LABELS: Record<JobPosting['remote_status'], string | null> = {
@@ -63,7 +65,7 @@ function SalaryIcon() {
   )
 }
 
-export function JobCard({ job, onShowDetail, isSelected = false }: JobCardProps) {
+export function JobCard({ job, onShowDetail, isSelected = false, isNew = false }: JobCardProps) {
   const setActiveApplication = useJobSearchStore((s) => s.setActiveApplication)
   const queryClient = useQueryClient()
   const [prepareError, setPrepareError] = useState<string | null>(null)
@@ -114,6 +116,11 @@ export function JobCard({ job, onShowDetail, isSelected = false }: JobCardProps)
             <div className="flex flex-wrap items-start justify-between gap-1.5">
               <div className="min-w-0 flex-1">
                 <h3 className="truncate text-[14px] font-semibold leading-snug text-slate-900">
+                  {isNew && (
+                    <span className="mr-1.5 inline-flex items-center rounded-full bg-emerald-50 px-1.5 py-0.5 align-middle text-[9px] font-bold uppercase tracking-wide text-emerald-700 ring-1 ring-emerald-200">
+                      New
+                    </span>
+                  )}
                   {job.title}
                 </h3>
                 {job.company && (

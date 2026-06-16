@@ -68,6 +68,7 @@ export function SearchBar({ variant, autoFocus = false }: SearchBarProps) {
   const setSelectedJob = useJobSearchStore((s) => s.setSelectedJob)
   const setSelectedSources = useJobSearchStore((s) => s.setSelectedSources)
   const setSelectedCompanies = useJobSearchStore((s) => s.setSelectedCompanies)
+  const setActiveSavedSearchId = useJobSearchStore((s) => s.setActiveSavedSearchId)
 
   const [localQuery, setLocalQuery] = useState(criteria.query)
   const debounceRef = useRef<ReturnType<typeof setTimeout> | null>(null)
@@ -95,6 +96,8 @@ export function SearchBar({ variant, autoFocus = false }: SearchBarProps) {
   const searchMutation = useMutation({
     mutationFn: createSearch,
     onSuccess: (data) => {
+      // Ad-hoc search — not tied to a saved search, so clear any "new" badge context.
+      setActiveSavedSearchId(null)
       setActiveSearchJob(data.job_id)
       setSelectedJob(null)
       setSelectedSources([])
@@ -143,8 +146,10 @@ export function SearchBar({ variant, autoFocus = false }: SearchBarProps) {
           aria-busy={searchMutation.isPending}
           className="inline-flex shrink-0 items-center gap-1.5 rounded-lg bg-indigo-600 px-4 py-2 text-[13px] font-semibold text-white transition hover:bg-indigo-700 focus:outline-none focus:ring-2 focus:ring-indigo-500 focus:ring-offset-1 disabled:cursor-not-allowed disabled:opacity-50"
         >
-          {searchMutation.isPending ? <Spinner className="h-4 w-4" /> : <SearchIcon className="h-4 w-4" />}
+          {searchMutation.isPending && <Spinner className="h-4 w-4" />}
           <span className="hidden sm:inline">Search</span>
+          {/* On the narrowest viewports the label is hidden, so keep an icon for affordance. */}
+          {!searchMutation.isPending && <SearchIcon className="h-4 w-4 sm:hidden" />}
         </button>
       </form>
     )

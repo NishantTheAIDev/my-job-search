@@ -455,3 +455,121 @@ def test_ml_engineer_outranks_offspecialty_engineer():
     assert ml_ops == 60
     assert gxp == _BASE_SCORE  # 50 — base only; description no longer boosts
     assert ml > gxp and ml_ops > gxp
+
+
+# ---------------------------------------------------------------------------
+# Morphology / suffix tolerance: "engineer" matches "Engineering" / plurals
+# ---------------------------------------------------------------------------
+
+
+def test_head_noun_matches_engineering_suffix():
+    """'engineer' head noun matches an 'Engineering' title (was a real miss → floor 5)."""
+    result = _score(
+        title="Sr. AVP - AI Security Engineering",
+        description="",
+        query="senior ai engineer",
+    )
+    # In-role base (50) + ai in title (+10) + sr→senior in title (+10) = 70.
+    assert result == 70
+
+
+def test_head_noun_matches_plural_suffix():
+    """'developer' matches a plural 'Developers' title."""
+    assert _score(title="Backend Developers Wanted", query="developer") == _BASE_SCORE
+
+
+def test_modifier_matches_suffix_form():
+    """A modifier still uses whole-word matching; suffix tolerance is length-gated."""
+    # 'frontend' (len ≥ 4) is matched; here we just confirm in-role + modifier boost.
+    assert _score(title="Frontend Engineering", query="frontend engineer") == 60
+
+
+def test_short_abbreviation_not_suffix_expanded():
+    """Length < 4 terms must NOT match inflected forms — 'go' must not match 'going'."""
+    # Query head noun 'go' (golang) must not match the word 'going' in a title.
+    assert _score(title="We are going remote — Analyst", query="go") == _OFF_ROLE_FLOOR
+
+
+def test_ai_modifier_not_matched_via_suffix():
+    """'ai' (len 2) must never match 'available' even with suffix tolerance present."""
+    assert _score(title="Engineer (seats available)", query="ai engineer") == _BASE_SCORE
+
+
+# ---------------------------------------------------------------------------
+# Soft related-role tier: different-but-related tech role noun in title
+# ---------------------------------------------------------------------------
+
+
+def test_related_role_architect_for_engineer_query():
+    """'AI Architect' for an 'ai engineer' search → related tier, not off-role floor."""
+    result = _score(
+        title="Principal Enterprise Architect - AI",
+        description="",
+        query="senior ai engineer",
+    )
+    # Related base (35) + ai in title (+5). 'principal' is not a 'senior' synonym.
+    assert result == 40
+
+
+def test_related_role_scientist_for_engineer_query():
+    """'Data Scientist' for an 'ai engineer' search → related tier."""
+    result = _score(
+        title="Staff Data Scientist | (AI ML | Graph Neural Networks and NLP)",
+        description="",
+        query="senior ai engineer",
+    )
+    assert result == 40
+
+
+def test_related_role_lead_for_engineer_query():
+    """'Data Science Lead' for an 'ai engineer' search → related tier ('lead' kept)."""
+    result = _score(
+        title="Data Science Lead (AI/ML Lead)",
+        description="",
+        query="senior ai engineer",
+    )
+    assert result == 40
+
+
+def test_related_role_always_below_in_role_base():
+    """A related-role title can never outrank a true in-role title.
+
+    Even with every modifier matching, the related band is capped at 49 < 50.
+    """
+    related = _score(
+        title="Senior AI ML Architect",
+        description="",
+        query="senior ai ml engineer",
+    )
+    in_role_bare = _score(title="Engineer", description="", query="senior ai ml engineer")
+    assert related <= 49
+    assert related < _BASE_SCORE
+    assert in_role_bare == _BASE_SCORE
+
+
+def test_related_role_visible_above_default_floor():
+    """Related-tier scores sit above the default min_relevance=30 filter."""
+    result = _score(title="AI Architect", description="", query="ai engineer")
+    assert result >= 35  # not hidden by the default floor
+
+
+def test_generic_role_noun_not_related():
+    """Generic nouns (specialist/analyst) are NOT in the family → still off-role floor."""
+    assert _score(title="Marketing Specialist", query="ai engineer") == _OFF_ROLE_FLOOR
+    assert _score(title="Financial Analyst", query="ai engineer") == _OFF_ROLE_FLOOR
+
+
+def test_unrelated_role_still_floors():
+    """A genuinely off-role title with no family member stays at the floor."""
+    assert _score(title="Marketing Manager", query="senior ai engineer") == _OFF_ROLE_FLOOR
+    assert (
+        _score(title="Mid/Senior AI Cinematic Video Editor", query="senior ai engineer")
+        == _OFF_ROLE_FLOOR
+    )
+
+
+def test_non_role_head_noun_no_related_tier():
+    """If the query head noun isn't a tech role noun, the related tier never triggers."""
+    # 'python' is the head noun (not a role noun); a title with 'architect' must
+    # NOT be promoted just because architect is in the family.
+    assert _score(title="Cloud Architect", query="python") == _OFF_ROLE_FLOOR
