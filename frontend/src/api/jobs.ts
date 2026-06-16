@@ -6,6 +6,7 @@ export interface ListJobsParams {
   page?: number
   page_size?: number
   min_score?: number
+  min_relevance?: number
   source?: string[]
   company?: string[]
 }
@@ -16,6 +17,7 @@ export async function listJobs(params: ListJobsParams): Promise<JobsListResponse
   if (params.page != null) p.set('page', String(params.page))
   if (params.page_size != null) p.set('page_size', String(params.page_size))
   if (params.min_score != null) p.set('min_score', String(params.min_score))
+  if (params.min_relevance != null) p.set('min_relevance', String(params.min_relevance))
   params.source?.forEach((s) => p.append('source', s))
   params.company?.forEach((c) => p.append('company', c))
   const response = await api.get<JobsListResponse>(`/jobs?${p.toString()}`)

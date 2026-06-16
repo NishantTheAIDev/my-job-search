@@ -25,6 +25,8 @@ class SearchStatusResponse(BaseModel):
     job_id: uuid.UUID
     status: SearchJobStatus
     total_results: int
+    completed_adapters: int
+    total_adapters: int
     error: str | None
 
 
@@ -67,5 +69,7 @@ def get_search_status(
         job_id=job.id,
         status=job.status,
         total_results=job.total_results,
+        completed_adapters=job.completed_adapters,
+        total_adapters=job.total_adapters,
         error=job.error,
     )

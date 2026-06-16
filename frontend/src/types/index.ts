@@ -20,6 +20,8 @@ export interface SearchStatusResponse {
   status: 'queued' | 'running' | 'complete' | 'failed'
   total_results: number | null
   error: string | null
+  completed_adapters: number
+  total_adapters: number
 }
 
 // Jobs
@@ -37,6 +39,7 @@ export interface JobPosting {
   compensation: string | null
   posted_date: string | null
   match_score: number | null
+  relevance_score: number | null
 }
 
 export interface JobsListResponse {
@@ -107,6 +110,30 @@ export interface DiffHunk {
 export interface PrepareApplicationResponse {
   status: string
   job_id: string
+}
+
+// ── Saved searches ──────────────────────────────────────────────────────────
+
+export interface SavedSearch {
+  id: string
+  name: string
+  criteria: SearchCriteria
+  created_at: string
+  last_run_at: string | null
+  last_search_job_id: string | null
+}
+
+export interface RunSavedSearchResponse {
+  saved_search_id: string
+  search_job_id: string
+  status: 'queued' | 'running' | 'complete' | 'failed'
+}
+
+export interface SavedSearchDiff {
+  search_job_id: string
+  new_count: number
+  new_posting_ids: string[]
+  is_first_run: boolean
 }
 
 // ── Insights ──────────────────────────────────────────────────────────────────

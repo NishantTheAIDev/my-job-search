@@ -3,7 +3,7 @@ import uuid
 
 from fastapi import APIRouter, BackgroundTasks, Depends, HTTPException, Query, Request
 from pydantic import BaseModel, Field
-from sqlalchemy import func
+from sqlalchemy import func, nullslast
 from sqlmodel import Session, select
 
 from backend.background.tasks import prepare_application_task
@@ -29,6 +29,7 @@ class JobPostingResponse(BaseModel):
     compensation: str | None
     posted_date: str | None
     match_score: int | None
+    relevance_score: int | None
 
 
 class JobsListResponse(BaseModel):
@@ -56,6 +57,7 @@ def _to_response(p: JobPosting) -> JobPostingResponse:
         compensation=p.compensation,
         posted_date=p.posted_date,
         match_score=p.match_score,
+        relevance_score=p.relevance_score,
     )
 
 
@@ -63,6 +65,7 @@ def _to_response(p: JobPosting) -> JobPostingResponse:
 def list_jobs(
     search_job_id: uuid.UUID,
     min_score: int | None = Query(default=None),
+    min_relevance: int | None = Query(default=30),
     source: list[str] | None = Query(default=None),
     company: list[str] | None = Query(default=None),
     page: int = Query(default=1, ge=1),
@@ -72,12 +75,22 @@ def list_jobs(
     query = select(JobPosting).where(JobPosting.search_job_id == search_job_id)
     if min_score is not None:
         query = query.where(JobPosting.match_score >= min_score)
+    if min_relevance is not None:
+        # Rows with NULL relevance_score are legacy/un-scored — let them through.
+        # Only exclude rows that have a score AND it falls below the floor.
+        query = query.where(
+            (JobPosting.relevance_score == None)  # noqa: E711
+            | (JobPosting.relevance_score >= min_relevance)
+        )
     if source:
         query = query.where(JobPosting.source.in_(source))
     if company:
         query = query.where(JobPosting.company.in_(company))
     if source or company:
         logger.debug("list_jobs: filtering source=%s company=%s", source, company)
+
+    # Sort by relevance descending; rows with no score fall to the end.
+    query = query.order_by(nullslast(JobPosting.relevance_score.desc()))
 
     total = session.exec(select(func.count()).select_from(query.subquery())).one()
     start = (page - 1) * page_size

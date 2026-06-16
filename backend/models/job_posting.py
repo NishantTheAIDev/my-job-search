@@ -36,4 +36,5 @@ class JobPosting(SQLModel, table=True):
     compensation: str | None = None
     posted_date: str | None = None
     match_score: int | None = None
+    relevance_score: int | None = None
     created_at: datetime = Field(default_factory=lambda: datetime.now(UTC))

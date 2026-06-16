@@ -13,6 +13,10 @@ interface JobSearchState {
   showInsights: boolean
   showPasteJd: boolean
   showSavedApplications: boolean
+  showSavedSearches: boolean
+  // The saved search whose re-run is currently active (drives the "new" badge).
+  // null for ad-hoc searches that didn't originate from a saved search.
+  activeSavedSearchId: string | null
   setCriteria: (c: Partial<SearchCriteria>) => void
   setActiveSearchJob: (id: string | null) => void
   setSelectedJob: (job: JobPosting | null) => void
@@ -24,6 +28,8 @@ interface JobSearchState {
   setShowInsights: (v: boolean) => void
   setShowPasteJd: (v: boolean) => void
   setShowSavedApplications: (v: boolean) => void
+  setShowSavedSearches: (v: boolean) => void
+  setActiveSavedSearchId: (id: string | null) => void
   resetToLanding: () => void
 }
 
@@ -39,6 +45,8 @@ export const useJobSearchStore = create<JobSearchState>((set) => ({
   showInsights: false,
   showPasteJd: false,
   showSavedApplications: false,
+  showSavedSearches: false,
+  activeSavedSearchId: null,
   setCriteria: (c) => set((s) => ({ criteria: { ...s.criteria, ...c } })),
   setActiveSearchJob: (id) => set({ activeSearchJobId: id }),
   setSelectedJob: (job) => set({ selectedJob: job }),
@@ -50,6 +58,8 @@ export const useJobSearchStore = create<JobSearchState>((set) => ({
   setShowInsights: (v) => set({ showInsights: v }),
   setShowPasteJd: (v) => set({ showPasteJd: v }),
   setShowSavedApplications: (v) => set({ showSavedApplications: v }),
+  setShowSavedSearches: (v) => set({ showSavedSearches: v }),
+  setActiveSavedSearchId: (id) => set({ activeSavedSearchId: id }),
   resetToLanding: () =>
     set({
       activeSearchJobId: null,
@@ -61,6 +71,8 @@ export const useJobSearchStore = create<JobSearchState>((set) => ({
       showInsights: false,
       showPasteJd: false,
       showSavedApplications: false,
+      showSavedSearches: false,
+      activeSavedSearchId: null,
       criteria: { query: '', remote_only: false, page: 1 },
     }),
 }))

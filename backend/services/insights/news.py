@@ -52,7 +52,7 @@ def _seendate_from_rfc2822(value: str | None) -> str:
         return ""
     try:
         return parsedate_to_datetime(value).astimezone(UTC).strftime("%Y%m%dT%H%M%SZ")
-    except (TypeError, ValueError):
+    except TypeError, ValueError:
         return ""
 
 
@@ -61,7 +61,7 @@ def _seendate_from_unix(ts: int | None) -> str:
         return ""
     try:
         return datetime.fromtimestamp(int(ts), UTC).strftime("%Y%m%dT%H%M%SZ")
-    except (TypeError, ValueError, OSError):
+    except TypeError, ValueError, OSError:
         return ""
 
 

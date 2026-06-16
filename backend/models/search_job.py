@@ -17,6 +17,8 @@ class SearchJob(SQLModel, table=True):
     criteria_json: str
     status: SearchJobStatus = SearchJobStatus.queued
     total_results: int = 0
+    completed_adapters: int = 0
+    total_adapters: int = 0
     error: str | None = None
     created_at: datetime = Field(default_factory=lambda: datetime.now(UTC))
     completed_at: datetime | None = None

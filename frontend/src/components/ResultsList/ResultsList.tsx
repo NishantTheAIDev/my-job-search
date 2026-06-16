@@ -1,11 +1,13 @@
-import { useEffect, useRef } from 'react'
+import { useEffect, useMemo, useRef, useState } from 'react'
 import { useQuery } from '@tanstack/react-query'
 import { getSearchStatus } from '../../api/search'
 import { listJobs } from '../../api/jobs'
+import { diffSavedSearch } from '../../api/savedSearches'
 import { useJobSearchStore } from '../../store/useJobSearchStore'
 import { LoadingSpinner } from '../shared/LoadingSpinner'
 import { ErrorBanner } from '../shared/ErrorBanner'
 import { EmptyState } from '../shared/EmptyState'
+import { SaveSearchButton } from '../shared/SaveSearchButton'
 import { JobCard } from './JobCard'
 
 const PAGE_SIZE = 20
@@ -34,10 +36,16 @@ export function ResultsList() {
   const selectedCompanies = useJobSearchStore((s) => s.selectedCompanies)
   const selectedJob = useJobSearchStore((s) => s.selectedJob)
   const setSelectedJob = useJobSearchStore((s) => s.setSelectedJob)
+  const activeSavedSearchId = useJobSearchStore((s) => s.activeSavedSearchId)
   const page = criteria.page ?? 1
+
+  // Local ephemeral state — mirrors how source/company filters are handled.
+  // Reset when the active search changes so a new search starts filtered.
+  const [showLowRelevance, setShowLowRelevance] = useState(false)
 
   useEffect(() => {
     setSelectedJob(null)
+    setShowLowRelevance(false)
   }, [activeSearchJobId, setSelectedJob])
 
   useEffect(() => {
@@ -56,19 +64,39 @@ export function ResultsList() {
 
   const isSearchComplete = statusQuery.data?.status === 'complete'
   const isSearchFailed = statusQuery.data?.status === 'failed'
+  const isSearchRunning =
+    statusQuery.data?.status === 'running' || statusQuery.data?.status === 'queued'
 
   const jobsQuery = useQuery({
-    queryKey: ['jobs', activeSearchJobId, page, selectedSources, selectedCompanies],
+    queryKey: ['jobs', activeSearchJobId, page, selectedSources, selectedCompanies, showLowRelevance],
     queryFn: () =>
       listJobs({
         search_job_id: activeSearchJobId!,
         page,
         page_size: PAGE_SIZE,
+        min_relevance: showLowRelevance ? 0 : undefined,
         source: selectedSources.length ? selectedSources : undefined,
         company: selectedCompanies.length ? selectedCompanies : undefined,
       }),
-    enabled: isSearchComplete && !!activeSearchJobId,
+    enabled: !!activeSearchJobId && (isSearchRunning || isSearchComplete),
+    // Poll on the same 2 s cadence as statusQuery while the search is still running.
+    refetchInterval: isSearchRunning ? 2000 : false,
   })
+
+  // "New since last run" — only when this run originated from a saved search.
+  // The diff endpoint is idempotent per search_job_id, so it's safe to call once
+  // the run completes; it advances the saved-search baseline as a side effect.
+  const diffQuery = useQuery({
+    queryKey: ['savedSearchDiff', activeSavedSearchId, activeSearchJobId],
+    queryFn: () => diffSavedSearch(activeSavedSearchId!, activeSearchJobId!),
+    enabled: !!activeSavedSearchId && !!activeSearchJobId && isSearchComplete,
+    staleTime: Infinity,
+  })
+
+  const newIds = useMemo(
+    () => new Set(diffQuery.data?.new_posting_ids ?? []),
+    [diffQuery.data],
+  )
 
   const liveRef = useRef<HTMLParagraphElement>(null)
   useEffect(() => {
@@ -81,8 +109,10 @@ export function ResultsList() {
   // starts — but guard defensively in case it's rendered without one.
   if (!activeSearchJobId) return null
 
-  const isPolling = statusQuery.data?.status === 'queued' || statusQuery.data?.status === 'running'
-  const isLoadingJobs = isSearchComplete && jobsQuery.isLoading
+  // Show a full-screen spinner only when we have zero results yet and the search
+  // is still running (i.e. the very first poll hasn't delivered anything yet).
+  const hasNoResultsYet = !jobsQuery.data || jobsQuery.data.items.length === 0
+  const isInitialLoad = isSearchRunning && hasNoResultsYet && !jobsQuery.isError
 
   if (statusQuery.isError) {
     return (
@@ -105,13 +135,10 @@ export function ResultsList() {
     )
   }
 
-  if (isPolling || isLoadingJobs) {
+  if (isInitialLoad) {
     return (
       <div className="flex h-full items-center justify-center">
-        <LoadingSpinner
-          label={isPolling ? 'Searching job boards…' : 'Loading results…'}
-          size="lg"
-        />
+        <LoadingSpinner label="Searching job boards…" size="lg" />
       </div>
     )
   }
@@ -144,7 +171,11 @@ export function ResultsList() {
       <div className="p-5">
         <EmptyState
           title="No jobs found"
-          description="No results matched your search. Try different keywords, remove filters, or expand your location."
+          description={
+            !showLowRelevance
+              ? 'No relevant results matched your search. Try enabling "Show low-relevance" above, remove filters, or search with different keywords.'
+              : 'No results matched your search. Try different keywords, remove filters, or expand your location.'
+          }
         />
       </div>
     )
@@ -155,20 +186,68 @@ export function ResultsList() {
       <p aria-live="polite" aria-atomic="true" className="sr-only" ref={liveRef} />
 
       {/* Results header */}
-      <div className="sticky top-0 z-10 flex items-center justify-between border-b border-slate-100 bg-white px-4 py-2.5">
-        <div className="flex items-baseline gap-1.5">
-          <span className="text-[13px] font-semibold text-slate-800">{total}</span>
-          <span className="text-[12px] text-slate-500">jobs found</span>
-          {statusQuery.data?.total_results != null && (
-            <span className="text-[11px] text-slate-400">
-              of {statusQuery.data.total_results} scraped
-            </span>
-          )}
+      <div className="sticky top-0 z-10 border-b border-slate-100 bg-white px-4 py-2.5">
+        <div className="flex items-center justify-between gap-3">
+          <div className="flex items-baseline gap-1.5">
+            <span className="text-[13px] font-semibold text-slate-800">{total}</span>
+            <span className="text-[12px] text-slate-500">jobs found</span>
+            {statusQuery.data?.total_results != null && (
+              <span className="text-[11px] text-slate-400">
+                of {statusQuery.data.total_results} scraped
+              </span>
+            )}
+            {activeSavedSearchId && isSearchComplete && (diffQuery.data?.new_count ?? 0) > 0 && (
+              <span className="ml-1 inline-flex items-center rounded-full bg-emerald-50 px-1.5 py-0.5 text-[10px] font-semibold text-emerald-700 ring-1 ring-emerald-200">
+                {diffQuery.data!.new_count} new
+              </span>
+            )}
+          </div>
+          <div className="flex items-center gap-3">
+            <SaveSearchButton />
+            <label className="flex cursor-pointer items-center gap-1.5 select-none">
+              <div
+                role="checkbox"
+                aria-checked={showLowRelevance}
+                tabIndex={0}
+                onClick={() => setShowLowRelevance((v) => !v)}
+                onKeyDown={(e) => {
+                  if (e.key === 'Enter' || e.key === ' ') {
+                    e.preventDefault()
+                    setShowLowRelevance((v) => !v)
+                  }
+                }}
+                className={`flex h-4 w-4 shrink-0 items-center justify-center rounded border transition focus:outline-none focus:ring-2 focus:ring-indigo-500 focus:ring-offset-1 ${
+                  showLowRelevance
+                    ? 'border-indigo-500 bg-indigo-500 text-white'
+                    : 'border-slate-300 bg-white'
+                }`}
+                aria-label="Show low-relevance results"
+              >
+                {showLowRelevance && (
+                  <svg className="h-2.5 w-2.5" viewBox="0 0 10 10" fill="none" stroke="currentColor" strokeWidth={2.5} aria-hidden="true">
+                    <path strokeLinecap="round" strokeLinejoin="round" d="M1.5 5l2.5 2.5 5-5" />
+                  </svg>
+                )}
+              </div>
+              <span className="text-[11px] text-slate-500">Show low-relevance</span>
+            </label>
+            {totalPages > 1 && (
+              <span className="text-[11px] text-slate-400">
+                Page {page} of {totalPages}
+              </span>
+            )}
+          </div>
         </div>
-        {totalPages > 1 && (
-          <span className="text-[11px] text-slate-400">
-            Page {page} of {totalPages}
-          </span>
+
+        {/* Inline progress indicator — visible while the search is still running */}
+        {isSearchRunning && statusQuery.data && statusQuery.data.total_adapters > 0 && (
+          <p
+            aria-live="polite"
+            aria-atomic="true"
+            className="mt-1 text-[11px] text-slate-400"
+          >
+            Searching… {statusQuery.data.completed_adapters}/{statusQuery.data.total_adapters} boards
+          </p>
         )}
       </div>
 
@@ -180,6 +259,7 @@ export function ResultsList() {
               job={job}
               onShowDetail={() => setSelectedJob(job)}
               isSelected={selectedJob?.id === job.id}
+              isNew={newIds.has(job.id)}
             />
           </li>
         ))}

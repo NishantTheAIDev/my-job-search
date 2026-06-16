@@ -53,6 +53,7 @@ const sampleJob: JobPosting = {
   compensation: null,
   posted_date: null,
   match_score: 82,
+  relevance_score: null,
 }
 
 beforeEach(() => {

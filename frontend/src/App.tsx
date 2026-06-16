@@ -8,6 +8,7 @@ import { ApprovalScreen } from './components/ApprovalScreen/ApprovalScreen'
 import { InsightsPage } from './components/Insights/InsightsPage'
 import { PasteJDPage } from './components/PasteJD/PasteJDPage'
 import { SavedApplicationsPage } from './components/SavedApplications/SavedApplicationsPage'
+import { SavedSearchesPage } from './components/SavedSearches/SavedSearchesPage'
 
 const queryClient = new QueryClient({
   defaultOptions: {
@@ -25,6 +26,7 @@ function AppLayout() {
   const showInsights = useJobSearchStore((s) => s.showInsights)
   const showPasteJd = useJobSearchStore((s) => s.showPasteJd)
   const showSavedApplications = useJobSearchStore((s) => s.showSavedApplications)
+  const showSavedSearches = useJobSearchStore((s) => s.showSavedSearches)
 
   // Full-page overlays — ordered by priority (showApproval must outrank showPasteJd
   // so the paste→approval transition works: PasteJDPage sets showPasteJd=false and
@@ -41,6 +43,14 @@ function AppLayout() {
     return (
       <div className="fixed inset-0 overflow-hidden bg-slate-50 font-sans">
         <SavedApplicationsPage />
+      </div>
+    )
+  }
+
+  if (showSavedSearches) {
+    return (
+      <div className="fixed inset-0 overflow-hidden bg-slate-50 font-sans">
+        <SavedSearchesPage />
       </div>
     )
   }
