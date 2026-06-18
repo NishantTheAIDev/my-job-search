@@ -9,9 +9,10 @@ class ApplicationStatus(StrEnum):
     preparing = "preparing"  # LLM pipeline in flight; not yet reviewable or approvable
     prep_failed = "prep_failed"  # pipeline errored before producing a reviewable application
     pending = "pending"
-    # NOTE: transitions go preparing -> pending -> submitted (or failed); "approved" is
-    # intentionally absent so there is no intermediate state that a second call site could treat
-    # as submission-ready. prep_failed is terminal for preparation and can never be approved.
+    # NOTE: live transitions are preparing -> pending -> saved (or rejected). prep_failed is
+    # terminal for preparation. "submitted"/"failed" below are legacy from a removed
+    # submit-to-board path and are no longer produced — see CLAUDE.md. Do not reintroduce a
+    # submission path without revisiting the no-external-submission invariant.
     rejected = "rejected"
     submitted = "submitted"
     failed = "failed"
@@ -22,6 +23,7 @@ class ApplicationStatus(StrEnum):
 
 class Application(SQLModel, table=True):
     id: uuid.UUID = Field(default_factory=uuid.uuid4, primary_key=True)
+    user_id: uuid.UUID = Field(foreign_key="user.id", index=True)
     job_posting_id: uuid.UUID = Field(foreign_key="jobposting.id", index=True)
     resume_id: uuid.UUID = Field(foreign_key="resume.id")
     status: ApplicationStatus = ApplicationStatus.pending

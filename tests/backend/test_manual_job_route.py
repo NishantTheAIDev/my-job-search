@@ -17,6 +17,7 @@ from fastapi.testclient import TestClient
 from sqlmodel import Session
 
 from backend.models.job_posting import JobPosting
+from backend.models.user import User
 
 # ---------------------------------------------------------------------------
 # Helpers
@@ -101,17 +102,18 @@ class TestCreateManualJobHappyPath:
         # Falls back to the default title set in create_manual_application
         assert posting.title  # non-empty
 
-    def test_background_task_is_queued(self, client: TestClient):
+    def test_background_task_is_queued(self, client: TestClient, user: User):
         """The task is added via BackgroundTasks — verified by patching."""
         _upload_resume(client)
         with patch("backend.routers.jobs.prepare_application_task") as mock_task:
-            # The route calls background_tasks.add_task(prepare_application_task, posting.id).
+            # The route calls
+            # background_tasks.add_task(prepare_application_task, posting.id, user.id).
             # FastAPI's TestClient runs background tasks synchronously after the response,
-            # so the patched task is invoked once with the new posting's id.
+            # so the patched task is invoked once with the new posting's id and the user id.
             response = client.post("/jobs/manual", json={"jd_text": SAMPLE_JD})
         assert response.status_code == 200
         assert response.json()["status"] == "preparing"
-        mock_task.assert_called_once_with(uuid.UUID(response.json()["job_id"]))
+        mock_task.assert_called_once_with(uuid.UUID(response.json()["job_id"]), user.id)
 
 
 # ---------------------------------------------------------------------------

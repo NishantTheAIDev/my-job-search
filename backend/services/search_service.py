@@ -102,6 +102,7 @@ async def run_search(
 
             for posting in new_postings:
                 posting.search_job_id = search_job_id
+                posting.user_id = job.user_id
                 posting.relevance_score = score_relevance(
                     posting.title, posting.description, criteria.query
                 )

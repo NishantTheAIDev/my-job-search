@@ -8,13 +8,14 @@ from slowapi.errors import RateLimitExceeded
 from slowapi.middleware import SlowAPIMiddleware
 
 from backend.config import settings
-from backend.database import create_db_and_tables
 from backend.limiter import limiter
 from backend.logging_config import RequestLoggingMiddleware, configure_logging
 from backend.models import insights_cache as _insights_cache_model  # noqa: F401 — registers table
 from backend.models import saved_search as _saved_search_model  # noqa: F401 — registers table
+from backend.models import user as _user_model  # noqa: F401 — registers table
 from backend.routers import (
     applications,
+    auth,
     exports,
     insights,
     jobs,
@@ -29,8 +30,7 @@ logger = logging.getLogger(__name__)
 
 @asynccontextmanager
 async def lifespan(app: FastAPI):
-    logger.info("startup: creating database tables")
-    create_db_and_tables()
+    # Schema is owned by Alembic — run `alembic upgrade head` before starting.
     logger.info("startup: ready")
     yield
     logger.info("shutdown: application stopping")
@@ -47,10 +47,11 @@ app.add_middleware(
     CORSMiddleware,
     allow_origins=settings.cors_origins,
     allow_credentials=False,
-    allow_methods=["GET", "POST", "PUT"],
-    allow_headers=["Content-Type", "Accept"],
+    allow_methods=["GET", "POST", "PUT", "DELETE"],
+    allow_headers=["Content-Type", "Accept", "Authorization"],
 )
 
+app.include_router(auth.router, prefix="/auth", tags=["auth"])
 app.include_router(resume.router, prefix="/resume", tags=["resume"])
 app.include_router(search.router, prefix="/search", tags=["search"])
 app.include_router(saved_searches.router, prefix="/saved-searches", tags=["saved-searches"])

@@ -1,11 +1,5 @@
 import { api } from './client'
-import type { ApplicationResponse, ApplicationStatus, SavedApplicationSummary } from '../types'
-
-export async function listApplications(status?: ApplicationStatus): Promise<ApplicationResponse[]> {
-  const params = status ? { status } : undefined
-  const response = await api.get<ApplicationResponse[]>('/applications', { params })
-  return response.data
-}
+import type { ApplicationResponse, SavedApplicationSummary } from '../types'
 
 export async function getApplication(id: string): Promise<ApplicationResponse> {
   const response = await api.get<ApplicationResponse>(`/applications/${id}`)
@@ -21,11 +15,6 @@ export async function getApplicationByJob(jobPostingId: string): Promise<Applica
 // (resume tailoring alone can take ~45s). At 2s between polls this caps the
 // "still preparing" wait at ~3 minutes before surfacing an error.
 export const PREPARE_POLL_MAX_RETRIES = 90
-
-export async function approveApplication(id: string): Promise<ApplicationResponse> {
-  const response = await api.post<ApplicationResponse>(`/applications/${id}/approve`)
-  return response.data
-}
 
 export async function rejectApplication(id: string): Promise<ApplicationResponse> {
   const response = await api.post<ApplicationResponse>(`/applications/${id}/reject`)

@@ -144,7 +144,7 @@ export interface NewsItem {
   title: string
   url: string
   domain: string
-  seendate: string // GDELT format: YYYYMMDDThhmmssZ
+  seendate: string // date format: YYYYMMDDThhmmssZ
 }
 
 export interface SalaryStat {

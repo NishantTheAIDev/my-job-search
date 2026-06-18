@@ -24,6 +24,7 @@ class SearchCriteria(SQLModel):
 
 class JobPosting(SQLModel, table=True):
     id: uuid.UUID = Field(default_factory=uuid.uuid4, primary_key=True)
+    user_id: uuid.UUID = Field(foreign_key="user.id", index=True)
     search_job_id: uuid.UUID | None = Field(default=None, foreign_key="searchjob.id", index=True)
     source: str
     source_job_id: str

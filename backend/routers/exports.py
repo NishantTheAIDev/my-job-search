@@ -17,9 +17,11 @@ from reportlab.lib.units import inch
 from reportlab.platypus import Paragraph, SimpleDocTemplate, Spacer
 from sqlmodel import Session
 
+from backend.auth.dependencies import get_current_user
 from backend.database import get_session
 from backend.models.application import Application
 from backend.models.job_posting import JobPosting
+from backend.models.user import User
 from backend.services.rendercv_service import RENDERCV_THEMES, RenderError, apply_theme
 from backend.services.rendercv_service import render_pdf as _rendercv_render_pdf
 
@@ -122,9 +124,9 @@ def _document_filename(app: Application, session: Session, prefix: str, ext: str
     return f"{prefix}_{company_part}_{title_part}.{ext}"
 
 
-def _get_app_or_404(app_id: uuid.UUID, session: Session) -> Application:
+def _get_app_or_404(app_id: uuid.UUID, user_id: uuid.UUID, session: Session) -> Application:
     app = session.get(Application, app_id)
-    if not app:
+    if not app or app.user_id != user_id:
         raise HTTPException(status_code=404, detail="Application not found")
     return app
 
@@ -138,8 +140,12 @@ def _attachment(content: bytes, media_type: str, filename: str) -> StreamingResp
 
 
 @router.get("/{app_id}/resume.docx")
-def download_resume_docx(app_id: uuid.UUID, session: Session = Depends(get_session)):
-    app = _get_app_or_404(app_id, session)
+def download_resume_docx(
+    app_id: uuid.UUID,
+    session: Session = Depends(get_session),
+    current_user: User = Depends(get_current_user),
+):
+    app = _get_app_or_404(app_id, current_user.id, session)
     filename = _document_filename(app, session, "Resume", "docx")
     return _attachment(_build_docx(app.tailored_resume_text or ""), _DOCX_MEDIA_TYPE, filename)
 
@@ -159,8 +165,9 @@ def download_resume_pdf(
     app_id: uuid.UUID,
     theme: str | None = Query(None),
     session: Session = Depends(get_session),
+    current_user: User = Depends(get_current_user),
 ):
-    app = _get_app_or_404(app_id, session)
+    app = _get_app_or_404(app_id, current_user.id, session)
     if theme is not None and theme not in RENDERCV_THEMES:
         raise HTTPException(status_code=400, detail=f"Unknown rendercv theme: {theme}")
     filename = _document_filename(app, session, "Resume", "pdf")
@@ -172,15 +179,23 @@ def download_resume_pdf(
 
 
 @router.get("/{app_id}/cover-letter.docx")
-def download_cover_letter_docx(app_id: uuid.UUID, session: Session = Depends(get_session)):
-    app = _get_app_or_404(app_id, session)
+def download_cover_letter_docx(
+    app_id: uuid.UUID,
+    session: Session = Depends(get_session),
+    current_user: User = Depends(get_current_user),
+):
+    app = _get_app_or_404(app_id, current_user.id, session)
     filename = _document_filename(app, session, "CoverLetter", "docx")
     return _attachment(_build_docx(app.cover_letter_text or ""), _DOCX_MEDIA_TYPE, filename)
 
 
 @router.get("/{app_id}/cover-letter.pdf")
-def download_cover_letter_pdf(app_id: uuid.UUID, session: Session = Depends(get_session)):
-    app = _get_app_or_404(app_id, session)
+def download_cover_letter_pdf(
+    app_id: uuid.UUID,
+    session: Session = Depends(get_session),
+    current_user: User = Depends(get_current_user),
+):
+    app = _get_app_or_404(app_id, current_user.id, session)
     filename = _document_filename(app, session, "CoverLetter", "pdf")
     pdf_bytes = _render_pdf_with_fallback(
         app.cover_letter_data_yaml or None, app.cover_letter_text or ""

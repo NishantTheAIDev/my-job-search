@@ -21,6 +21,11 @@ dependencies = [
     "beautifulsoup4>=4.12.0",
     "reportlab>=4.5.1",
     "rendercv[full]>=2.8",
+    "psycopg[binary]>=3.3.4",
+    "alembic>=1.18.4",
+    "pwdlib[bcrypt]>=0.3.0",
+    "pyjwt>=2.13.0",
+    "email-validator>=2.3.0",
 ]
 
 [project.optional-dependencies]
@@ -43,6 +48,8 @@ markers = [
 [tool.ruff]
 line-length = 100
 target-version = "py314"
+# Alembic autogenerates migration files; don't lint generated code.
+extend-exclude = ["backend/migrations"]
 
 [tool.ruff.lint]
 select = ["E", "F", "I", "UP", "B", "SIM", "W"]

@@ -8,10 +8,12 @@ from fastapi import APIRouter, Depends, File, HTTPException, Request, UploadFile
 from pydantic import BaseModel
 from sqlmodel import Session, select
 
+from backend.auth.dependencies import get_current_user
 from backend.config import settings
 from backend.database import get_session
 from backend.limiter import limiter
 from backend.models.resume import Resume
+from backend.models.user import User
 
 logger = logging.getLogger(__name__)
 router = APIRouter()
@@ -50,6 +52,7 @@ async def upload_resume(
     request: Request,
     file: UploadFile = File(...),
     session: Session = Depends(get_session),
+    current_user: User = Depends(get_current_user),
 ):
     filename = file.filename or "resume.txt"
     ext = Path(filename).suffix.lower()
@@ -75,12 +78,19 @@ async def upload_resume(
     async with aiofiles.open(file_path, "wb") as f:
         await f.write(content)
 
-    existing = session.exec(select(Resume).where(Resume.is_active == True)).all()  # noqa: E712
+    # Active resume is per-user: deactivate only this user's previously active ones.
+    existing = session.exec(
+        select(Resume).where(
+            Resume.user_id == current_user.id,
+            Resume.is_active == True,  # noqa: E712
+        )
+    ).all()
     for r in existing:
         r.is_active = False
         session.add(r)
 
     resume = Resume(
+        user_id=current_user.id,
         filename=filename,
         file_path=str(file_path.resolve()),
         text_content=text,
@@ -105,8 +115,16 @@ async def upload_resume(
 
 
 @router.get("", response_model=ResumeResponse)
-def get_resume(session: Session = Depends(get_session)):
-    resume = session.exec(select(Resume).where(Resume.is_active == True)).first()  # noqa: E712
+def get_resume(
+    session: Session = Depends(get_session),
+    current_user: User = Depends(get_current_user),
+):
+    resume = session.exec(
+        select(Resume).where(
+            Resume.user_id == current_user.id,
+            Resume.is_active == True,  # noqa: E712
+        )
+    ).first()
     if not resume:
         raise HTTPException(status_code=404, detail="No resume uploaded yet")
     return ResumeResponse(

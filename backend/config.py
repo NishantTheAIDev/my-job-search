@@ -13,7 +13,16 @@ class Settings(BaseSettings):
     themuse_api_key: str = ""  # optional — raises rate limits but not required
     jsearch_api_key: SecretStr = SecretStr("")
     indeed_api_key: SecretStr = SecretStr("")
-    database_url: str = "sqlite:///./data/jobsearch.db"
+    database_url: str = "postgresql+psycopg://jobsearch:jobsearch@localhost:5432/jobsearch"
+    # DB connection pool — sized for concurrent multi-user load on Postgres.
+    db_pool_size: int = 10
+    db_max_overflow: int = 20
+    # Auth — JWT signing for our own email/password login. The get_current_user
+    # dependency is the swap seam: to delegate auth to Supabase later, change only
+    # how the token is verified, not these settings' shape.
+    jwt_secret: SecretStr = SecretStr("dev-insecure-secret-change-me-in-production-env")
+    jwt_algorithm: str = "HS256"
+    access_token_ttl_minutes: int = 60 * 24 * 7  # 7 days
     resume_storage_dir: str = "./data/resumes"
     log_level: str = "INFO"
     # Comma-separated list of allowed CORS origins

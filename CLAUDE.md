@@ -4,9 +4,11 @@ This file provides guidance to Claude Code (claude.ai/code) when working with co
 
 ## Project overview
 
-An AI-powered job search and application assistant. Fans out across multiple job boards (Adzuna, JSearch, LinkedIn, Indeed, Remotive, The Muse, Greenhouse, Lever, Arbeitnow, Jobicy, We Work Remotely), scores listings against the candidate's resume via Claude, tailors the resume and drafts cover letters, then submits — but **only after explicit user approval** (a hard invariant enforced at the service layer, not just the UI).
+An AI-powered job search and application assistant. Fans out across multiple job boards (Adzuna, JSearch, LinkedIn, Indeed, Remotive, The Muse, Greenhouse, Lever, Arbeitnow, Jobicy, We Work Remotely), scores listings against the candidate's resume via Claude, tailors the resume and drafts cover letters, and lets the user review, edit, and **save** the result for reference. It does **not** submit to job boards. The app is **multi-user**: all candidate data is scoped per `user_id` and isolation is enforced at the service layer (hard invariant #1).
 
-**Stack**: Python 3.14 / FastAPI / SQLModel (SQLite) / Anthropic SDK — managed with `uv`. React 19 / TypeScript / Vite / Tailwind CSS 4 / TanStack Query / Zustand frontend.
+**Stack**: Python 3.14 / FastAPI / SQLModel / **Postgres** (Alembic migrations; Docker Compose locally) / JWT auth / Anthropic SDK — managed with `uv`. React 19 / TypeScript / Vite / Tailwind CSS 4 / TanStack Query / Zustand frontend.
+
+**Local DB**: `docker compose up -d postgres` then `alembic upgrade head`. `DATABASE_URL` points at local Docker Postgres by default; at deploy, swap it for a managed free-tier Postgres (e.g. Supabase). Tests use in-memory SQLite via the `conftest.py` fixture, so models stay DB-agnostic.
 
 ## Guidelines
 - Plan before implementing anything, if unsure ask followup questions.
@@ -21,6 +23,9 @@ uv run pytest                # all backend tests
 uv run pytest tests/backend/test_approval_gate.py -v   # single file
 uv run pytest path/to/test.py::test_name               # single test
 uv add <package>             # add backend dependency
+docker compose up -d postgres   # local Postgres for dev
+alembic upgrade head         # apply migrations
+alembic revision --autogenerate -m "msg"   # new migration from model changes
 uv run ruff check .          # lint
 uv run ruff check --fix .    # lint + auto-fix
 uv run ruff format .         # format
@@ -54,11 +59,13 @@ POST /jobs/{id}/prepare
       drafting_service.draft_cover_letter() → LLM call
   → creates Application(status=pending)
 
-POST /applications/{id}/approve   ← ONLY submission path
-  → application_service.approve_application()
+POST /applications/{id}/save   ← terminal user action (NO external submission)
+  → application_service.save_application(app_id, user_id, session)
+      asserts ownership (foreign/missing → ApplicationError → 404)
       asserts status == pending (raises InvalidStateError → 409 otherwise)
-      calls submission_service.submit()  ← imported inside function body (makes call site explicit)
-      writes Application(status=submitted) + AuditLog in ONE session.commit()
+      writes Application(status=saved) + AuditLog in ONE session.commit()
+  (The app does NOT submit to job boards. There is no approve/submit endpoint.
+   POST /applications/{id}/reject works the same way → status=rejected.)
 
 GET /applications/{id}/resume.docx        |  /resume.pdf
 GET /applications/{id}/cover-letter.docx  |  /cover-letter.pdf
@@ -105,7 +112,7 @@ Centralized in `backend/logging_config.py`. Call `configure_logging(level)` once
 
 ### Rate limiting
 
-`backend/limiter.py` holds the shared `slowapi.Limiter` instance. Import from there — never create a second `Limiter`. Applied to: `POST /resume/upload` (10/min), `POST /search` (5/min), `POST /applications/{id}/approve` (20/min). Route handlers that use it need `request: Request` as their first parameter.
+`backend/limiter.py` holds the shared `slowapi.Limiter` instance. Import from there — never create a second `Limiter`. The key function is **per-user** (`user:<id>` from the bearer token), falling back to client IP for unauthenticated requests (e.g. `/auth/*`). Applied to: `POST /auth/register` (5/min), `POST /auth/login` (10/min), `POST /resume/upload` (10/min), `POST /search` (5/min), `POST /applications/{id}/save` (20/min), `POST /applications/{id}/revise` & `PUT /applications/{id}/content` (10/min). Route handlers that use it need `request: Request` as their first parameter.
 
 ### Adapter pattern
 
@@ -152,6 +159,18 @@ Multi-value query param patterns:
 
 **Router ordering**: define `GET /jobs/filters` **before** `GET /jobs/{job_id}` in the router — otherwise FastAPI tries to parse the literal string "filters" as a UUID and returns 422. This applies to any route with a named path that would otherwise be shadowed by a `/{uuid}` catch-all.
 
+### Auth
+
+`backend/routers/auth.py`: `POST /auth/register`, `POST /auth/login` (both return a `TokenResponse` bearer JWT), `GET /auth/me`. Auth is **first-party**, not an external IdP: passwords hashed with `pwdlib` BcryptHasher, tokens signed/verified with `pyjwt` (`backend/auth/security.py`; `jwt_secret`/`jwt_algorithm` from settings). `get_current_user` (`backend/auth/dependencies.py`) is the single auth seam every protected route depends on — decodes the bearer token to a `user_id` and is the place to swap in an external IdP later without touching downstream scoping (see hard invariant #1).
+
+### Insights (job-market data)
+
+`backend/routers/insights.py` — `GET /insights?region=` (news + salaries + hottest fields + trends) and `GET /insights/salary?role=&region=` (single-role median). Region codes: `in`, `us`, `gb`, `world`. **Not a tenant entity** — data is global/public and cached per `(section, region)` in the `InsightsCache` DB table (`backend/models/insights_cache.py`) with a TTL of `settings.insights_cache_ttl_hours` (~24h), so these endpoints are unscoped by `user_id`. Orchestration in `backend/services/insights_service.py` is fault-tolerant: each section degrades independently. External sources live in `backend/services/insights/`: `news.py` (Google News RSS + Hacker News fallback), `adzuna_insights.py` (salary histogram median + categories by vacancy count), `worldbank.py` (macro unemployment/employment, fail-fast timeouts so a cold cache never stalls the page).
+
+### Saved searches
+
+`backend/routers/saved_searches.py` — `POST /saved-searches`, `GET /saved-searches`, `POST /saved-searches/{id}/run`, `POST /saved-searches/{id}/diff`, `DELETE /saved-searches/{id}`. A saved search stores criteria plus a baseline set of posting keys. `run` re-executes the search; `diff` (`backend/services/saved_search_service.py::diff_run`) compares a completed run against the stored baseline to report "new since last run", then **advances the baseline**. Posting identity across runs is `posting_key(source, source_job_id)` — stable, not the row UUID. `SavedSearch` is a `user_id`-scoped owned entity (hard invariant #1).
+
 ### Frontend data flow
 
 ```
@@ -169,7 +188,7 @@ Filter: ResultsFilterPanel (source pills + company checkboxes)
 
 Apply:  JobCard → POST /jobs/{id}/prepare → store activeApplicationId
         ResumeEditor slide-over → DiffView + cover letter preview
-        ApprovalScreen → ConfirmationModal → POST /applications/{id}/approve
+        ApprovalScreen → ConfirmationModal → POST /applications/{id}/save
 ```
 
 `criteria.page` and search filters (query, remote_only) are synced to URL query params (`window.history.replaceState`) so searches survive refresh. Source/company filter state is local and intentionally ephemeral.
@@ -187,7 +206,9 @@ Route work to the right agent:
 
 ## Hard invariants
 
-1. **Approval gate**: `application_service.approve_application()` is the **only** function that calls `submission_service.submit()`. It asserts `status == pending` and writes both the status update and the `AuditLog` row in a single `session.commit()`. `submitted_at` is never set without a corresponding `AuditLog` row.
+1. **Tenant isolation**: Every query and mutation on an owned entity (`Resume`, `SearchJob`, `JobPosting`, `Application`, `AuditLog`, `SavedSearch`) is scoped to the authenticated `user_id` at the **service layer**, not just the UI. Rows are stamped with `user_id` on create (background tasks receive `user_id`); reads filter by it and mutations assert ownership **before** acting. Cross-tenant access returns **404** (a foreign row is indistinguishable from a missing one, so existence can't be probed). `get_current_user` (`backend/auth/dependencies.py`) is the single auth seam — swap it to verify an external IdP's JWT without touching any downstream scoping.
+
+   **No external submission**: the app tailors and **saves** applications; it does not submit to job boards. `save_application()` (pending → `saved`) and `reject_application()` (pending → `rejected`) are the only terminal transitions, each writing its status change and `AuditLog` row in one `session.commit()`. There is intentionally no approve/submit path.
 
 2. **No fabrication**: Resume tailoring and cover letter drafting system prompts contain an absolute prohibition on inventing experience, metrics, employers, or credentials. The prompts are in `backend/llm/prompts/tailor.py` and `drafter.py`.
 
@@ -203,6 +224,6 @@ Route work to the right agent:
 - Long-running work (search fan-out, LLM pipeline) runs via `FastAPI BackgroundTasks` — background task functions use `asyncio.run()` since they execute in a thread pool worker, and open their own `Session(engine)`.
 - `datetime.now(UTC)` everywhere — `datetime.utcnow()` is deprecated in Python 3.14.
 - `bool` columns in SQLModel queries use `== True` with `# noqa: E712` (SQLAlchemy requires the explicit comparison; Python's `is True` doesn't work in WHERE clauses).
-- `ApplicationStatus` transitions directly `pending → submitted` (or `failed`). There is no intermediate `approved` state — its absence is intentional to prevent a second submission path from being added.
+- `ApplicationStatus`: the live terminal transitions are `pending → saved` and `pending → rejected`. The `submitted`/`failed`/`approved` states are legacy from a removed submit-to-board path and are no longer produced — do not reintroduce a submission path without revisiting the no-external-submission invariant.
 - Frontend components always handle three data states explicitly: loading, empty, and error.
 - The `DiffView` component uses color **and** a text decoration secondary cue (strikethrough for removed, underline for added) — both are required for color-blind accessibility.

@@ -35,14 +35,15 @@ def start_search_task(
 
 def prepare_application_task(
     job_id: uuid.UUID,
+    user_id: uuid.UUID,
 ) -> None:
     """Sync wrapper for the async prepare_application pipeline."""
     from backend.services.application_service import prepare_application
 
-    logger.info("task start: prepare_application job_id=%s", job_id)
+    logger.info("task start: prepare_application job_id=%s user_id=%s", job_id, user_id)
     try:
         with Session(engine) as session:
-            asyncio.run(prepare_application(job_id, session))
+            asyncio.run(prepare_application(job_id, user_id, session))
         logger.info("task done: prepare_application job_id=%s", job_id)
     except Exception:
         logger.exception("task error: prepare_application job_id=%s", job_id)

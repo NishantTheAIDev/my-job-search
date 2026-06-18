@@ -8,14 +8,15 @@ from fastapi import APIRouter, Depends, HTTPException, Request
 from pydantic import BaseModel, Field
 from sqlmodel import Session, select
 
+from backend.auth.dependencies import get_current_user
 from backend.database import get_session
 from backend.limiter import limiter
 from backend.models.application import Application, ApplicationStatus
 from backend.models.job_posting import JobPosting
+from backend.models.user import User
 from backend.services.application_service import (
     ApplicationError,
     InvalidStateError,
-    approve_application,
     edit_application_content,
     reject_application,
     revise_application,
@@ -90,23 +91,30 @@ def _to_response(app: Application) -> ApplicationResponse:
 def list_applications(
     status: ApplicationStatus | None = None,
     session: Session = Depends(get_session),
+    current_user: User = Depends(get_current_user),
 ):
-    query = select(Application)
+    query = select(Application).where(Application.user_id == current_user.id)
     if status:
         query = query.where(Application.status == status)
     return [_to_response(a) for a in session.exec(query).all()]
 
 
 @router.get("/saved", response_model=list[SavedApplicationItem])
-def list_saved_applications(session: Session = Depends(get_session)):
-    """Return all saved applications ordered by saved_at descending.
+def list_saved_applications(
+    session: Session = Depends(get_session),
+    current_user: User = Depends(get_current_user),
+):
+    """Return the user's saved applications ordered by saved_at descending.
 
     Defined before GET /{app_id} and GET /by-job/... so the literal path
     segment "saved" is not shadowed by the UUID catch-all route.
     """
     apps = session.exec(
         select(Application)
-        .where(Application.status == ApplicationStatus.saved)
+        .where(
+            Application.user_id == current_user.id,
+            Application.status == ApplicationStatus.saved,
+        )
         .order_by(Application.saved_at.desc())
     ).all()
     items: list[SavedApplicationItem] = []
@@ -126,18 +134,25 @@ def list_saved_applications(session: Session = Depends(get_session)):
 
 
 @router.get("/by-job/{job_posting_id}", response_model=ApplicationResponse)
-def get_application_by_job(job_posting_id: uuid.UUID, session: Session = Depends(get_session)):
+def get_application_by_job(
+    job_posting_id: uuid.UUID,
+    session: Session = Depends(get_session),
+    current_user: User = Depends(get_current_user),
+):
     """Resolve the most recent application for a job posting.
 
     The prepare pipeline runs in the background and creates the Application row
     only when it finishes, so the client polls this endpoint (keyed by the job
     posting id it already has) until the row exists, then uses the returned
-    application id for approve/reject. Defined before ``/{app_id}`` so the
+    application id for save/reject. Defined before ``/{app_id}`` so the
     literal "by-job" segment is not parsed as a UUID.
     """
     app = session.exec(
         select(Application)
-        .where(Application.job_posting_id == job_posting_id)
+        .where(
+            Application.user_id == current_user.id,
+            Application.job_posting_id == job_posting_id,
+        )
         .order_by(Application.created_at.desc())
     ).first()
     if not app:
@@ -146,29 +161,25 @@ def get_application_by_job(job_posting_id: uuid.UUID, session: Session = Depends
 
 
 @router.get("/{app_id}", response_model=ApplicationResponse)
-def get_application(app_id: uuid.UUID, session: Session = Depends(get_session)):
+def get_application(
+    app_id: uuid.UUID,
+    session: Session = Depends(get_session),
+    current_user: User = Depends(get_current_user),
+):
     app = session.get(Application, app_id)
-    if not app:
+    if not app or app.user_id != current_user.id:
         raise HTTPException(status_code=404, detail="Application not found")
     return _to_response(app)
 
 
-@router.post("/{app_id}/approve", response_model=ApplicationResponse)
-@limiter.limit("20/minute")
-def approve(request: Request, app_id: uuid.UUID, session: Session = Depends(get_session)):
-    try:
-        app = approve_application(app_id, session)
-        return _to_response(app)
-    except InvalidStateError as exc:
-        raise HTTPException(status_code=409, detail=str(exc)) from exc
-    except ApplicationError as exc:
-        raise HTTPException(status_code=404, detail=str(exc)) from exc
-
-
 @router.post("/{app_id}/reject", response_model=ApplicationResponse)
-def reject(app_id: uuid.UUID, session: Session = Depends(get_session)):
+def reject(
+    app_id: uuid.UUID,
+    session: Session = Depends(get_session),
+    current_user: User = Depends(get_current_user),
+):
     try:
-        app = reject_application(app_id, session)
+        app = reject_application(app_id, current_user.id, session)
         return _to_response(app)
     except InvalidStateError as exc:
         raise HTTPException(status_code=409, detail=str(exc)) from exc
@@ -178,14 +189,20 @@ def reject(app_id: uuid.UUID, session: Session = Depends(get_session)):
 
 @router.post("/{app_id}/save", response_model=ApplicationResponse)
 @limiter.limit("20/minute")
-def save(request: Request, app_id: uuid.UUID, session: Session = Depends(get_session)):
-    """Approve & Save — persist the tailored result without submitting to any board.
+def save(
+    request: Request,
+    app_id: uuid.UUID,
+    session: Session = Depends(get_session),
+    current_user: User = Depends(get_current_user),
+):
+    """Approve & Save — persist the tailored result. This is the terminal user
+    action; the app never submits to an external job board.
 
     Transitions pending → saved (terminal). Writes an AuditLog row in the same
-    commit. Does NOT call submission_service.submit().
+    commit.
     """
     try:
-        app = save_application(app_id, session)
+        app = save_application(app_id, current_user.id, session)
         return _to_response(app)
     except InvalidStateError as exc:
         raise HTTPException(status_code=409, detail=str(exc)) from exc
@@ -212,10 +229,13 @@ async def revise(
     app_id: uuid.UUID,
     body: ReviseRequest,
     session: Session = Depends(get_session),
+    current_user: User = Depends(get_current_user),
 ):
     """LLM-revise resume or cover letter given natural-language instructions."""
     try:
-        app = await revise_application(app_id, body.target, body.instructions, session)
+        app = await revise_application(
+            app_id, body.target, body.instructions, current_user.id, session
+        )
         return _to_response(app)
     except InvalidStateError as exc:
         raise HTTPException(status_code=409, detail=str(exc)) from exc
@@ -230,10 +250,13 @@ async def edit_content(
     app_id: uuid.UUID,
     body: EditContentRequest,
     session: Session = Depends(get_session),
+    current_user: User = Depends(get_current_user),
 ):
     """Accept free-text edits, re-structure, and rebuild YAML + diff."""
     try:
-        app = await edit_application_content(app_id, body.target, body.text, session)
+        app = await edit_application_content(
+            app_id, body.target, body.text, current_user.id, session
+        )
         return _to_response(app)
     except InvalidStateError as exc:
         raise HTTPException(status_code=409, detail=str(exc)) from exc

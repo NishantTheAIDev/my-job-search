@@ -32,6 +32,18 @@ class InvalidStateError(ApplicationError):
     pass
 
 
+def _get_owned_application(app_id: uuid.UUID, user_id: uuid.UUID, session: Session) -> Application:
+    """Load an application that belongs to user_id, else raise ApplicationError.
+
+    A foreign application is treated as not-found (same error as a missing one) so
+    callers can't probe for the existence of other users' applications.
+    """
+    app = session.get(Application, app_id)
+    if not app or app.user_id != user_id:
+        raise ApplicationError(f"Application {app_id} not found")
+    return app
+
+
 # Pipeline stage markers persisted on Application.prep_stage while status == preparing,
 # so the UI can show real progress instead of inferring it from a timeout. The frontend
 # maps these keys to user-facing labels.
@@ -95,6 +107,7 @@ def _contact_from_cv(cv: dict) -> dict:
 
 async def prepare_application(
     job_id: uuid.UUID,
+    user_id: uuid.UUID,
     session: Session,
 ) -> Application:
     """Run the full LLM pipeline, surfacing progress on a persisted Application.
@@ -109,21 +122,25 @@ async def prepare_application(
     Steps: get active resume → get job posting → create preparing row →
     parse JD → score → tailor → draft → mark pending.
     """
-    # Load the active resume
+    # Load the active resume for this user
     resume = session.exec(
-        select(Resume).where(Resume.is_active == True)  # noqa: E712
+        select(Resume).where(
+            Resume.user_id == user_id,
+            Resume.is_active == True,  # noqa: E712
+        )
     ).first()
     if not resume:
         raise ApplicationError("No active resume found — upload a resume first")
 
-    # Load the job posting
+    # Load the job posting (must belong to the same user)
     posting = session.get(JobPosting, job_id)
-    if not posting:
+    if not posting or posting.user_id != user_id:
         raise ApplicationError(f"Job posting {job_id} not found")
 
     # Create the row up front so the client's by-job poll resolves right away and
     # can render progress rather than waiting out a blind timeout.
     app = Application(
+        user_id=user_id,
         job_posting_id=posting.id,
         resume_id=resume.id,
         status=ApplicationStatus.preparing,
@@ -270,70 +287,9 @@ async def prepare_application(
         raise ApplicationError(f"Pipeline failed: {exc}") from exc
 
 
-def approve_application(app_id: uuid.UUID, session: Session) -> Application:
-    """Transition an application from pending -> submitted.
-
-    This is the ONLY function that may call submission_service.submit().
-    Approval and audit log write happen atomically in one commit.
-    """
-    app = session.get(Application, app_id)
-    if not app:
-        raise ApplicationError(f"Application {app_id} not found")
-    if app.status != ApplicationStatus.pending:
-        raise InvalidStateError(
-            f"Cannot approve application in status '{app.status}' — must be 'pending'"
-        )
-
-    posting = session.get(JobPosting, app.job_posting_id)
-    now = datetime.now(UTC)
-
-    logger.info(
-        "approve_application: id=%s title=%r company=%r",
-        app_id,
-        posting.title if posting else "unknown",
-        posting.company if posting else None,
-    )
-
-    # Import here to avoid circular deps and make the ONLY call site explicit
-    from backend.services.submission_service import submit
-
-    try:
-        submit(app, posting, session)
-        app.status = ApplicationStatus.submitted
-        app.approved_at = now
-        app.submitted_at = now
-        audit = AuditLog(
-            application_id=app.id,
-            action="submitted",
-            job_title=posting.title if posting else "unknown",
-            company=posting.company if posting else None,
-            board_url=posting.url if posting else "",
-        )
-        logger.info("approve_application: id=%s → submitted", app_id)
-    except Exception as exc:
-        logger.error("approve_application: id=%s submission failed: %s", app_id, exc)
-        app.status = ApplicationStatus.failed
-        audit = AuditLog(
-            application_id=app.id,
-            action="failed",
-            job_title=posting.title if posting else "unknown",
-            company=posting.company if posting else None,
-            board_url=posting.url if posting else "",
-            metadata_json=json.dumps({"error": str(exc)}),
-        )
-
-    session.add(app)
-    session.add(audit)
-    session.commit()
-    session.refresh(app)
-    return app
-
-
-def reject_application(app_id: uuid.UUID, session: Session) -> Application:
+def reject_application(app_id: uuid.UUID, user_id: uuid.UUID, session: Session) -> Application:
     """Transition an application from pending -> rejected."""
-    app = session.get(Application, app_id)
-    if not app:
-        raise ApplicationError(f"Application {app_id} not found")
+    app = _get_owned_application(app_id, user_id, session)
     if app.status not in (ApplicationStatus.pending,):
         raise InvalidStateError(f"Cannot reject application in status '{app.status}'")
 
@@ -341,6 +297,7 @@ def reject_application(app_id: uuid.UUID, session: Session) -> Application:
     app.status = ApplicationStatus.rejected
     app.rejected_at = datetime.now(UTC)
     audit = AuditLog(
+        user_id=user_id,
         application_id=app.id,
         action="rejected",
         job_title=posting.title if posting else "unknown",
@@ -360,17 +317,15 @@ def reject_application(app_id: uuid.UUID, session: Session) -> Application:
     return app
 
 
-def save_application(app_id: uuid.UUID, session: Session) -> Application:
+def save_application(app_id: uuid.UUID, user_id: uuid.UUID, session: Session) -> Application:
     """Transition an application from pending -> saved.
 
     'saved' is a terminal status meaning the user wants to keep this tailored
-    result for reference without submitting it to a job board. This function
-    MUST NOT call submission_service.submit() — there is no submission path here.
-    Status update and AuditLog are written in a single commit (mirrors reject_application).
+    result for reference. There is NO external job-board submission anywhere in
+    this app — 'saved' is the terminal user action. Status update and AuditLog
+    are written in a single commit (mirrors reject_application).
     """
-    app = session.get(Application, app_id)
-    if not app:
-        raise ApplicationError(f"Application {app_id} not found")
+    app = _get_owned_application(app_id, user_id, session)
     if app.status != ApplicationStatus.pending:
         raise InvalidStateError(
             f"Cannot save application in status '{app.status}' — must be 'pending'"
@@ -380,6 +335,7 @@ def save_application(app_id: uuid.UUID, session: Session) -> Application:
     app.status = ApplicationStatus.saved
     app.saved_at = datetime.now(UTC)
     audit = AuditLog(
+        user_id=user_id,
         application_id=app.id,
         action="saved",
         job_title=posting.title if posting else "unknown",
@@ -403,6 +359,7 @@ def create_manual_application(
     jd_text: str,
     title: str | None,
     company: str | None,
+    user_id: uuid.UUID,
     session: Session,
 ) -> JobPosting:
     """Create a synthetic JobPosting from a pasted job description.
@@ -415,12 +372,16 @@ def create_manual_application(
     Raises ApplicationError if no active resume exists (fail-fast before queuing).
     """
     resume = session.exec(
-        select(Resume).where(Resume.is_active == True)  # noqa: E712
+        select(Resume).where(
+            Resume.user_id == user_id,
+            Resume.is_active == True,  # noqa: E712
+        )
     ).first()
     if not resume:
         raise ApplicationError("No active resume found — upload a resume first")
 
     posting = JobPosting(
+        user_id=user_id,
         source="manual",
         source_job_id=str(uuid.uuid4()),
         search_job_id=None,
@@ -446,21 +407,20 @@ async def revise_application(
     app_id: uuid.UUID,
     target: str,
     instructions: str,
+    user_id: uuid.UUID,
     session: Session,
 ) -> Application:
     """LLM-revise the resume or cover letter given natural-language instructions.
 
-    Only allowed while status == pending. Does NOT call submission_service.
+    Only allowed while status == pending.
 
     Note: unlike search/prepare, this awaits the LLM call inline within the request
-    session rather than offloading to a background task. The request session stays
-    open for the full LLM round-trip. This is acceptable for SQLite (no connection
-    pool to exhaust) and keeps the revise/edit UX synchronous; revisit if migrating
-    to a pooled database.
+    session rather than offloading to a background task. The request session holds a
+    pooled Postgres connection open for the full LLM round-trip, which reduces pool
+    availability under load. This keeps the revise/edit UX synchronous; revisit (offload
+    to a background task) if this endpoint comes under concurrent load.
     """
-    app = session.get(Application, app_id)
-    if not app:
-        raise ApplicationError(f"Application {app_id} not found")
+    app = _get_owned_application(app_id, user_id, session)
     if app.status != ApplicationStatus.pending:
         raise InvalidStateError(
             f"Cannot revise application in status '{app.status}' — must be 'pending'"
@@ -560,15 +520,14 @@ async def edit_application_content(
     app_id: uuid.UUID,
     target: str,
     text: str,
+    user_id: uuid.UUID,
     session: Session,
 ) -> Application:
     """Accept free-text edits, re-structure into rendercv format, rebuild YAML + diff.
 
-    Only allowed while status == pending. Does NOT call submission_service.
+    Only allowed while status == pending.
     """
-    app = session.get(Application, app_id)
-    if not app:
-        raise ApplicationError(f"Application {app_id} not found")
+    app = _get_owned_application(app_id, user_id, session)
     if app.status != ApplicationStatus.pending:
         raise InvalidStateError(
             f"Cannot edit application in status '{app.status}' — must be 'pending'"

@@ -8,10 +8,12 @@ from sqlmodel import Session
 from backend.models.application import Application, ApplicationStatus
 from backend.models.job_posting import JobPosting, RemoteStatus
 from backend.models.resume import Resume
+from backend.models.user import User
 
 
-def _create_test_application(session: Session) -> Application:
+def _create_test_application(session: Session, user_id) -> Application:
     posting = JobPosting(
+        user_id=user_id,
         source="test",
         source_job_id="e1",
         title="Software Engineer",
@@ -25,6 +27,7 @@ def _create_test_application(session: Session) -> Application:
     session.refresh(posting)
 
     resume = Resume(
+        user_id=user_id,
         filename="test.txt",
         file_path="/tmp/test.txt",
         text_content="John Doe\nSoftware Engineer",
@@ -34,6 +37,7 @@ def _create_test_application(session: Session) -> Application:
     session.refresh(resume)
 
     app = Application(
+        user_id=user_id,
         job_posting_id=posting.id,
         resume_id=resume.id,
         status=ApplicationStatus.pending,
@@ -46,8 +50,8 @@ def _create_test_application(session: Session) -> Application:
     return app
 
 
-def test_download_resume_returns_docx(client: TestClient, session: Session):
-    app = _create_test_application(session)
+def test_download_resume_returns_docx(client: TestClient, session: Session, user: User):
+    app = _create_test_application(session, user.id)
     response = client.get(f"/applications/{app.id}/resume.docx")
     assert response.status_code == 200
     assert "wordprocessingml" in response.headers["content-type"]
@@ -60,8 +64,8 @@ def test_download_resume_not_found(client: TestClient):
     assert response.status_code == 404
 
 
-def test_filename_contains_company_and_title(client: TestClient, session: Session):
-    app = _create_test_application(session)
+def test_filename_contains_company_and_title(client: TestClient, session: Session, user: User):
+    app = _create_test_application(session, user.id)
     response = client.get(f"/applications/{app.id}/resume.docx")
     assert response.status_code == 200
     disposition = response.headers["content-disposition"]
@@ -69,16 +73,16 @@ def test_filename_contains_company_and_title(client: TestClient, session: Sessio
     assert "Software_Engineer" in disposition
 
 
-def test_docx_is_valid_zip(client: TestClient, session: Session):
-    app = _create_test_application(session)
+def test_docx_is_valid_zip(client: TestClient, session: Session, user: User):
+    app = _create_test_application(session, user.id)
     response = client.get(f"/applications/{app.id}/resume.docx")
     assert response.status_code == 200
     # All .docx files are ZIP archives; magic bytes are PK\x03\x04
     assert response.content[:4] == b"PK\x03\x04"
 
 
-def test_download_resume_returns_pdf(client: TestClient, session: Session):
-    app = _create_test_application(session)
+def test_download_resume_returns_pdf(client: TestClient, session: Session, user: User):
+    app = _create_test_application(session, user.id)
     response = client.get(f"/applications/{app.id}/resume.pdf")
     assert response.status_code == 200
     assert response.headers["content-type"] == "application/pdf"
@@ -95,8 +99,8 @@ def test_download_pdf_not_found(client: TestClient):
     assert response.status_code == 404
 
 
-def test_download_cover_letter_docx(client: TestClient, session: Session):
-    app = _create_test_application(session)
+def test_download_cover_letter_docx(client: TestClient, session: Session, user: User):
+    app = _create_test_application(session, user.id)
     response = client.get(f"/applications/{app.id}/cover-letter.docx")
     assert response.status_code == 200
     assert "wordprocessingml" in response.headers["content-type"]
@@ -105,8 +109,8 @@ def test_download_cover_letter_docx(client: TestClient, session: Session):
     assert response.content[:4] == b"PK\x03\x04"
 
 
-def test_download_cover_letter_pdf(client: TestClient, session: Session):
-    app = _create_test_application(session)
+def test_download_cover_letter_pdf(client: TestClient, session: Session, user: User):
+    app = _create_test_application(session, user.id)
     response = client.get(f"/applications/{app.id}/cover-letter.pdf")
     assert response.status_code == 200
     assert response.headers["content-type"] == "application/pdf"

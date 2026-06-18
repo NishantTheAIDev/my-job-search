@@ -16,6 +16,7 @@ from sqlmodel import Session, select
 from backend.models.application import Application, ApplicationStatus
 from backend.models.job_posting import JobPosting, RemoteStatus
 from backend.models.resume import Resume
+from backend.models.user import User
 from backend.services import (
     application_service,
     drafting_service,
@@ -25,11 +26,16 @@ from backend.services import (
 from backend.services.application_service import ApplicationError, prepare_application
 
 
-def _seed(session: Session) -> JobPosting:
+def _seed(session: Session, user_id) -> JobPosting:
     resume = Resume(
-        filename="r.txt", file_path="/tmp/r.txt", text_content="original resume", is_active=True
+        user_id=user_id,
+        filename="r.txt",
+        file_path="/tmp/r.txt",
+        text_content="original resume",
+        is_active=True,
     )
     posting = JobPosting(
+        user_id=user_id,
         source="test",
         source_job_id="p1",
         title="Software Engineer",
@@ -73,11 +79,11 @@ def _patch_pipeline(monkeypatch, *, fail_stage: str | None = None) -> None:
 
 
 @pytest.mark.asyncio
-async def test_prepare_success_transitions_to_pending(session: Session, monkeypatch):
-    posting = _seed(session)
+async def test_prepare_success_transitions_to_pending(session: Session, user: User, monkeypatch):
+    posting = _seed(session, user.id)
     _patch_pipeline(monkeypatch)
 
-    app = await prepare_application(posting.id, session)
+    app = await prepare_application(posting.id, user.id, session)
 
     assert app.status == ApplicationStatus.pending
     assert app.prep_stage == ""
@@ -91,12 +97,12 @@ async def test_prepare_success_transitions_to_pending(session: Session, monkeypa
 
 
 @pytest.mark.asyncio
-async def test_prepare_failure_transitions_to_prep_failed(session: Session, monkeypatch):
-    posting = _seed(session)
+async def test_prepare_failure_transitions_to_prep_failed(session: Session, user: User, monkeypatch):
+    posting = _seed(session, user.id)
     _patch_pipeline(monkeypatch, fail_stage="tailoring")
 
     with pytest.raises(ApplicationError):
-        await prepare_application(posting.id, session)
+        await prepare_application(posting.id, user.id, session)
 
     # Exactly one row exists and it records the failure for the client to see.
     app = session.exec(
@@ -108,15 +114,15 @@ async def test_prepare_failure_transitions_to_prep_failed(session: Session, monk
 
 
 @pytest.mark.asyncio
-async def test_tailored_resume_persisted_before_drafting(session: Session, monkeypatch):
+async def test_tailored_resume_persisted_before_drafting(session: Session, user: User, monkeypatch):
     # If drafting fails, the tailored resume produced by the earlier stage must
     # still be persisted (it is committed before drafting begins) so it remains
     # reviewable/downloadable.
-    posting = _seed(session)
+    posting = _seed(session, user.id)
     _patch_pipeline(monkeypatch, fail_stage="drafting")
 
     with pytest.raises(ApplicationError):
-        await prepare_application(posting.id, session)
+        await prepare_application(posting.id, user.id, session)
 
     app = session.exec(
         select(Application).where(Application.job_posting_id == posting.id)
@@ -128,9 +134,9 @@ async def test_tailored_resume_persisted_before_drafting(session: Session, monke
 
 @pytest.mark.asyncio
 async def test_prepare_without_active_resume_raises_and_creates_no_row(
-    session: Session, monkeypatch
+    session: Session, user: User, monkeypatch
 ):
-    posting = _seed(session)
+    posting = _seed(session, user.id)
     # Deactivate the only resume.
     resume = session.exec(select(Resume)).one()
     resume.is_active = False
@@ -139,16 +145,16 @@ async def test_prepare_without_active_resume_raises_and_creates_no_row(
     _patch_pipeline(monkeypatch)
 
     with pytest.raises(ApplicationError):
-        await prepare_application(posting.id, session)
+        await prepare_application(posting.id, user.id, session)
 
     rows = session.exec(select(Application)).all()
     assert rows == []
 
 
 @pytest.mark.asyncio
-async def test_prepare_missing_posting_raises(session: Session, monkeypatch):
-    _seed(session)
+async def test_prepare_missing_posting_raises(session: Session, user: User, monkeypatch):
+    _seed(session, user.id)
     _patch_pipeline(monkeypatch)
 
     with pytest.raises(ApplicationError):
-        await prepare_application(uuid.uuid4(), session)
+        await prepare_application(uuid.uuid4(), user.id, session)

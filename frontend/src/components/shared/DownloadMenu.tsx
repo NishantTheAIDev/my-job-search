@@ -1,5 +1,6 @@
 import { useEffect, useId, useRef, useState } from 'react'
 import type { DownloadFormat } from '../../api/applications'
+import { downloadFile } from '../../api/client'
 
 const FORMATS: { format: DownloadFormat; label: string }[] = [
   { format: 'pdf', label: 'PDF (.pdf)' },
@@ -29,8 +30,21 @@ interface DownloadMenuProps {
 export function DownloadMenu({ label, urlFor, themes, defaultTheme }: DownloadMenuProps) {
   const [open, setOpen] = useState(false)
   const [theme, setTheme] = useState(defaultTheme ?? themes?.[0]?.value)
+  const [downloadError, setDownloadError] = useState(false)
   const containerRef = useRef<HTMLDivElement>(null)
   const themeSelectId = useId()
+
+  async function handleDownload(format: DownloadFormat) {
+    setDownloadError(false)
+    try {
+      // Authenticated download: fetch as a blob (bearer token attached) rather
+      // than a plain link, which can't send the Authorization header.
+      await downloadFile(urlFor(format, theme))
+      setOpen(false)
+    } catch {
+      setDownloadError(true)
+    }
+  }
 
   useEffect(() => {
     if (!open) return
@@ -98,17 +112,21 @@ export function DownloadMenu({ label, urlFor, themes, defaultTheme }: DownloadMe
             </div>
           )}
           {FORMATS.map(({ format, label: formatLabel }) => (
-            <a
+            <button
               key={format}
+              type="button"
               role="menuitem"
-              href={urlFor(format, theme)}
-              download
-              onClick={() => setOpen(false)}
-              className="block px-3 py-2 text-[13px] text-slate-700 transition hover:bg-slate-50 focus:bg-slate-50 focus:outline-none"
+              onClick={() => handleDownload(format)}
+              className="block w-full px-3 py-2 text-left text-[13px] text-slate-700 transition hover:bg-slate-50 focus:bg-slate-50 focus:outline-none"
             >
               {formatLabel}
-            </a>
+            </button>
           ))}
+          {downloadError && (
+            <p role="alert" className="px-3 py-2 text-[12px] text-red-600">
+              Download failed. Please try again.
+            </p>
+          )}
         </div>
       )}
     </div>

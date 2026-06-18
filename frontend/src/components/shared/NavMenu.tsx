@@ -1,5 +1,7 @@
 import { useEffect, useRef, useState } from 'react'
+import { useQueryClient } from '@tanstack/react-query'
 import { useJobSearchStore } from '../../store/useJobSearchStore'
+import { useAuthStore } from '../../store/useAuthStore'
 
 interface NavItem {
   label: string
@@ -18,9 +20,19 @@ export function NavMenu() {
   const setShowSavedSearches = useJobSearchStore((s) => s.setShowSavedSearches)
   const setShowSavedApplications = useJobSearchStore((s) => s.setShowSavedApplications)
   const setShowInsights = useJobSearchStore((s) => s.setShowInsights)
+  const resetToLanding = useJobSearchStore((s) => s.resetToLanding)
+  const clearToken = useAuthStore((s) => s.clearToken)
+  const queryClient = useQueryClient()
 
   const [open, setOpen] = useState(false)
   const containerRef = useRef<HTMLDivElement>(null)
+
+  function handleLogout() {
+    // Drop cached per-user server state so the next login starts clean.
+    resetToLanding()
+    queryClient.clear()
+    clearToken()
+  }
 
   useEffect(() => {
     if (!open) return
@@ -107,6 +119,18 @@ export function NavMenu() {
               {label}
             </button>
           ))}
+          <div className="my-1 border-t border-slate-100" />
+          <button
+            type="button"
+            role="menuitem"
+            onClick={() => { setOpen(false); handleLogout() }}
+            className="flex w-full items-center gap-2.5 px-3.5 py-2 text-left text-[13px] font-medium text-slate-700 transition hover:bg-red-50 hover:text-red-700 focus:bg-red-50 focus:outline-none"
+          >
+            <svg className="h-4 w-4 shrink-0 text-slate-400" fill="none" stroke="currentColor" strokeWidth={1.75} viewBox="0 0 24 24" aria-hidden="true">
+              <path strokeLinecap="round" strokeLinejoin="round" d="M15.75 9V5.25A2.25 2.25 0 0 0 13.5 3h-6a2.25 2.25 0 0 0-2.25 2.25v13.5A2.25 2.25 0 0 0 7.5 21h6a2.25 2.25 0 0 0 2.25-2.25V15M12 9l-3 3m0 0 3 3m-3-3h12.75" />
+            </svg>
+            Log out
+          </button>
         </div>
       )}
     </div>

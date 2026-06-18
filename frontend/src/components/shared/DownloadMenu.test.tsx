@@ -1,16 +1,24 @@
 /**
  * Tests for the DownloadMenu, focused on the optional RenderCV theme selector.
  *
+ * Downloads are authenticated blob fetches via downloadFile() (bearer token can't
+ * ride on a plain <a href>), so we mock downloadFile and assert the URL it receives.
+ *
  * Verifies that:
  * 1. Without a `themes` prop, no theme selector renders (back-compat).
- * 2. With `themes`, a selector renders and the PDF link reflects the chosen theme.
+ * 2. With `themes`, a selector renders and the PDF download reflects the chosen theme.
  * 3. urlFor receives the selected theme so the export URL carries `?theme=`.
+ * 4. The docx download is unaffected by the theme.
  */
 
 import { render, screen } from '@testing-library/react'
 import userEvent from '@testing-library/user-event'
+import { vi } from 'vitest'
 import { DownloadMenu } from './DownloadMenu'
 import type { DownloadFormat } from '../../api/applications'
+
+const downloadFile = vi.hoisted(() => vi.fn())
+vi.mock('../../api/client', () => ({ downloadFile }))
 
 const THEMES = [
   { value: 'engineeringresumes', label: 'Engineering Resumes' },
@@ -22,13 +30,18 @@ function urlFor(format: DownloadFormat, theme?: string): string {
   return format === 'pdf' && theme ? `${url}?theme=${theme}` : url
 }
 
+beforeEach(() => {
+  downloadFile.mockReset()
+  downloadFile.mockResolvedValue(undefined)
+})
+
 it('renders no theme selector when themes prop is absent', async () => {
   render(<DownloadMenu label="Resume" urlFor={urlFor} />)
   await userEvent.click(screen.getByRole('button', { name: /resume/i }))
   expect(screen.queryByLabelText('PDF theme')).toBeNull()
 })
 
-it('renders a theme selector and applies the default theme to the PDF link', async () => {
+it('renders a theme selector and downloads the PDF with the default theme', async () => {
   render(
     <DownloadMenu
       label="Resume"
@@ -39,21 +52,23 @@ it('renders a theme selector and applies the default theme to the PDF link', asy
   )
   await userEvent.click(screen.getByRole('button', { name: /resume/i }))
   expect(screen.getByLabelText('PDF theme')).toBeInTheDocument()
-  const pdfLink = screen.getByRole('menuitem', { name: /pdf/i })
-  expect(pdfLink).toHaveAttribute('href', '/api/applications/1/resume.pdf?theme=engineeringresumes')
+  await userEvent.click(screen.getByRole('menuitem', { name: /pdf/i }))
+  expect(downloadFile).toHaveBeenCalledWith(
+    '/api/applications/1/resume.pdf?theme=engineeringresumes'
+  )
 })
 
-it('updates the PDF link when a different theme is selected', async () => {
+it('downloads the PDF with a different theme when one is selected', async () => {
   render(<DownloadMenu label="Resume" urlFor={urlFor} themes={THEMES} />)
   await userEvent.click(screen.getByRole('button', { name: /resume/i }))
   await userEvent.selectOptions(screen.getByLabelText('PDF theme'), 'moderncv')
-  const pdfLink = screen.getByRole('menuitem', { name: /pdf/i })
-  expect(pdfLink).toHaveAttribute('href', '/api/applications/1/resume.pdf?theme=moderncv')
+  await userEvent.click(screen.getByRole('menuitem', { name: /pdf/i }))
+  expect(downloadFile).toHaveBeenCalledWith('/api/applications/1/resume.pdf?theme=moderncv')
 })
 
-it('leaves the docx link untouched by the theme', async () => {
+it('leaves the docx download untouched by the theme', async () => {
   render(<DownloadMenu label="Resume" urlFor={urlFor} themes={THEMES} />)
   await userEvent.click(screen.getByRole('button', { name: /resume/i }))
-  const docxLink = screen.getByRole('menuitem', { name: /word/i })
-  expect(docxLink).toHaveAttribute('href', '/api/applications/1/resume.docx')
+  await userEvent.click(screen.getByRole('menuitem', { name: /word/i }))
+  expect(downloadFile).toHaveBeenCalledWith('/api/applications/1/resume.docx')
 })
