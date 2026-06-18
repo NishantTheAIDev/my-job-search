@@ -23,6 +23,9 @@ uv run pytest                # all backend tests
 uv run pytest tests/backend/test_approval_gate.py -v   # single file
 uv run pytest path/to/test.py::test_name               # single test
 uv add <package>             # add backend dependency
+docker compose up -d postgres   # local Postgres for dev
+alembic upgrade head         # apply migrations
+alembic revision --autogenerate -m "msg"   # new migration from model changes
 uv run ruff check .          # lint
 uv run ruff check --fix .    # lint + auto-fix
 uv run ruff format .         # format
@@ -155,6 +158,18 @@ Multi-value query param patterns:
 - **Frontend**: `URLSearchParams` with `.append()` to serialize `string[]` correctly (not `.set()`)
 
 **Router ordering**: define `GET /jobs/filters` **before** `GET /jobs/{job_id}` in the router — otherwise FastAPI tries to parse the literal string "filters" as a UUID and returns 422. This applies to any route with a named path that would otherwise be shadowed by a `/{uuid}` catch-all.
+
+### Auth
+
+`backend/routers/auth.py`: `POST /auth/register`, `POST /auth/login` (both return a `TokenResponse` bearer JWT), `GET /auth/me`. Auth is **first-party**, not an external IdP: passwords hashed with `pwdlib` BcryptHasher, tokens signed/verified with `pyjwt` (`backend/auth/security.py`; `jwt_secret`/`jwt_algorithm` from settings). `get_current_user` (`backend/auth/dependencies.py`) is the single auth seam every protected route depends on — decodes the bearer token to a `user_id` and is the place to swap in an external IdP later without touching downstream scoping (see hard invariant #1).
+
+### Insights (job-market data)
+
+`backend/routers/insights.py` — `GET /insights?region=` (news + salaries + hottest fields + trends) and `GET /insights/salary?role=&region=` (single-role median). Region codes: `in`, `us`, `gb`, `world`. **Not a tenant entity** — data is global/public and cached per `(section, region)` in the `InsightsCache` DB table (`backend/models/insights_cache.py`) with a TTL of `settings.insights_cache_ttl_hours` (~24h), so these endpoints are unscoped by `user_id`. Orchestration in `backend/services/insights_service.py` is fault-tolerant: each section degrades independently. External sources live in `backend/services/insights/`: `news.py` (Google News RSS + Hacker News fallback), `adzuna_insights.py` (salary histogram median + categories by vacancy count), `worldbank.py` (macro unemployment/employment, fail-fast timeouts so a cold cache never stalls the page).
+
+### Saved searches
+
+`backend/routers/saved_searches.py` — `POST /saved-searches`, `GET /saved-searches`, `POST /saved-searches/{id}/run`, `POST /saved-searches/{id}/diff`, `DELETE /saved-searches/{id}`. A saved search stores criteria plus a baseline set of posting keys. `run` re-executes the search; `diff` (`backend/services/saved_search_service.py::diff_run`) compares a completed run against the stored baseline to report "new since last run", then **advances the baseline**. Posting identity across runs is `posting_key(source, source_job_id)` — stable, not the row UUID. `SavedSearch` is a `user_id`-scoped owned entity (hard invariant #1).
 
 ### Frontend data flow
 

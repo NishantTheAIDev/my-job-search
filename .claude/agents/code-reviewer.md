@@ -1,7 +1,7 @@
 ---
 name: code-reviewer
 description: "Reviews code changes in my-job-search for correctness, maintainability, and consistency with project conventions before they're merged. Use proactively after implementing a feature or fix, or when the user asks for a review of a diff, file, or module. Returns a prioritized list of findings; does not modify code. Examples: reviewing a new FastAPI endpoint before commit; checking a React component for bugs and prop mismatches; sanity-checking an adapter before it ships."
-model: sonnet
+model: opus
 color: green
 tools: Read, Grep, Glob
 ---

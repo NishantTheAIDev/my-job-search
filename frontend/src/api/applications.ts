@@ -1,11 +1,5 @@
 import { api } from './client'
-import type { ApplicationResponse, ApplicationStatus, SavedApplicationSummary } from '../types'
-
-export async function listApplications(status?: ApplicationStatus): Promise<ApplicationResponse[]> {
-  const params = status ? { status } : undefined
-  const response = await api.get<ApplicationResponse[]>('/applications', { params })
-  return response.data
-}
+import type { ApplicationResponse, SavedApplicationSummary } from '../types'
 
 export async function getApplication(id: string): Promise<ApplicationResponse> {
   const response = await api.get<ApplicationResponse>(`/applications/${id}`)

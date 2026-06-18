@@ -415,10 +415,10 @@ async def revise_application(
     Only allowed while status == pending.
 
     Note: unlike search/prepare, this awaits the LLM call inline within the request
-    session rather than offloading to a background task. The request session stays
-    open for the full LLM round-trip. This is acceptable for SQLite (no connection
-    pool to exhaust) and keeps the revise/edit UX synchronous; revisit if migrating
-    to a pooled database.
+    session rather than offloading to a background task. The request session holds a
+    pooled Postgres connection open for the full LLM round-trip, which reduces pool
+    availability under load. This keeps the revise/edit UX synchronous; revisit (offload
+    to a background task) if this endpoint comes under concurrent load.
     """
     app = _get_owned_application(app_id, user_id, session)
     if app.status != ApplicationStatus.pending:
