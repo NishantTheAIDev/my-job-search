@@ -1,12 +1,11 @@
 import uuid
 from datetime import UTC, datetime
-from enum import Enum
-from typing import Optional
+from enum import StrEnum
 
 from sqlmodel import Field, SQLModel
 
 
-class SearchJobStatus(str, Enum):
+class SearchJobStatus(StrEnum):
     queued = "queued"
     running = "running"
     complete = "complete"
@@ -15,9 +14,12 @@ class SearchJobStatus(str, Enum):
 
 class SearchJob(SQLModel, table=True):
     id: uuid.UUID = Field(default_factory=uuid.uuid4, primary_key=True)
+    user_id: uuid.UUID = Field(foreign_key="user.id", index=True)
     criteria_json: str
     status: SearchJobStatus = SearchJobStatus.queued
     total_results: int = 0
-    error: Optional[str] = None
+    completed_adapters: int = 0
+    total_adapters: int = 0
+    error: str | None = None
     created_at: datetime = Field(default_factory=lambda: datetime.now(UTC))
-    completed_at: Optional[datetime] = None
+    completed_at: datetime | None = None

@@ -1,30 +1,40 @@
 interface ScoreBadgeProps {
   score: number | null
+  size?: 'sm' | 'md'
 }
 
-export function ScoreBadge({ score }: ScoreBadgeProps) {
+export function ScoreBadge({ score, size = 'md' }: ScoreBadgeProps) {
+  const dim = size === 'sm' ? 'h-9 w-9 text-[11px]' : 'h-11 w-11 text-xs'
+
   if (score === null) {
     return (
       <span
-        className="inline-flex h-10 w-10 items-center justify-center rounded-full border-2 border-gray-200 bg-gray-50 text-xs font-bold text-gray-400"
+        className={`inline-flex ${dim} items-center justify-center rounded-full border-2 border-slate-200 bg-slate-50 font-bold text-slate-400`}
         aria-label="No match score"
         title="No match score"
       >
-        &mdash;
+        —
       </span>
     )
   }
 
-  const colorClass =
+  const ring =
     score >= 70
-      ? 'border-green-400 bg-green-50 text-green-700'
+      ? 'border-emerald-400'
       : score >= 50
-        ? 'border-yellow-400 bg-yellow-50 text-yellow-700'
-        : 'border-red-400 bg-red-50 text-red-700'
+        ? 'border-amber-400'
+        : 'border-rose-400'
+
+  const fill =
+    score >= 70
+      ? 'bg-emerald-50 text-emerald-700'
+      : score >= 50
+        ? 'bg-amber-50 text-amber-700'
+        : 'bg-rose-50 text-rose-700'
 
   return (
     <span
-      className={`inline-flex h-10 w-10 items-center justify-center rounded-full border-2 text-xs font-bold ${colorClass}`}
+      className={`inline-flex ${dim} items-center justify-center rounded-full border-2 font-bold ${ring} ${fill}`}
       aria-label={`Match score: ${score} out of 100`}
       title={`Match score: ${score}/100`}
     >

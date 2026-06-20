@@ -1,0 +1,22 @@
+services:
+  postgres:
+    image: postgres:16
+    container_name: jobsearch-postgres
+    environment:
+      POSTGRES_USER: jobsearch
+      POSTGRES_PASSWORD: jobsearch
+      POSTGRES_DB: jobsearch
+    ports:
+      # host:container — if a native Postgres already binds 5432 locally, change
+      # the host side to 5433 and set DATABASE_URL to ...@localhost:5433/...
+      - "5432:5432"
+    volumes:
+      - jobsearch_pgdata:/var/lib/postgresql/data
+    healthcheck:
+      test: ["CMD-SHELL", "pg_isready -U jobsearch -d jobsearch"]
+      interval: 5s
+      timeout: 5s
+      retries: 5
+
+volumes:
+  jobsearch_pgdata:

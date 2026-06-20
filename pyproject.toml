@@ -18,6 +18,14 @@ dependencies = [
     "aiofiles>=24.1.0",
     "tenacity>=9.0.0",
     "slowapi>=0.1.9",
+    "beautifulsoup4>=4.12.0",
+    "reportlab>=4.5.1",
+    "rendercv[full]>=2.8",
+    "psycopg[binary]>=3.3.4",
+    "alembic>=1.18.4",
+    "pwdlib[bcrypt]>=0.3.0",
+    "pyjwt>=2.13.0",
+    "email-validator>=2.3.0",
 ]
 
 [project.optional-dependencies]
@@ -33,6 +41,29 @@ dev = [
 [tool.pytest.ini_options]
 asyncio_mode = "auto"
 testpaths = ["tests"]
+markers = [
+    "slow: opt-in tests that shell out to rendercv for a real render",
+]
+
+[tool.ruff]
+line-length = 100
+target-version = "py314"
+# Alembic autogenerates migration files; don't lint generated code.
+extend-exclude = ["backend/migrations"]
 
 [tool.ruff.lint]
-select = ["E", "F", "I", "UP"]
+select = ["E", "F", "I", "UP", "B", "SIM", "W"]
+ignore = [
+    "E712",   # SQLAlchemy requires `== True` in WHERE clauses; `is True` doesn't work
+    "B008",   # FastAPI uses function calls in default arguments (Depends, File, Query)
+    "SIM117", # nested `with` statements are fine for session + asyncio.run patterns
+]
+
+[tool.ruff.lint.isort]
+known-first-party = ["backend"]
+
+[tool.ruff.lint.per-file-ignores]
+# LLM prompt strings are intentionally long prose — wrapping would break the text
+"backend/llm/prompts/*.py" = ["E501"]
+# Test files can use longer lines for assertion messages and fixture data
+"tests/**/*.py" = ["E501"]

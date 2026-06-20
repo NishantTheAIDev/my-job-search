@@ -12,6 +12,7 @@ vi.mock('../../api/jobs')
 
 const mockGetSearchStatus = vi.mocked(searchApi.getSearchStatus)
 const mockListJobs = vi.mocked(jobsApi.listJobs)
+const mockGetJobFilters = vi.mocked(jobsApi.getJobFilters)
 
 function wrapper({ children }: { children: React.ReactNode }) {
   const client = new QueryClient({
@@ -28,21 +29,27 @@ const sampleJob: JobPosting = {
   location: 'San Francisco, CA',
   remote_status: 'remote',
   url: 'https://example.com/jobs/1',
+  description: 'We are looking for a Senior React Engineer to join our team.',
   compensation: '$150k–$180k',
   posted_date: '2026-05-20',
   match_score: 85,
+  relevance_score: 72,
 }
 
 beforeEach(() => {
   vi.clearAllMocks()
-  // Reset store
-  useJobSearchStore.setState({ activeSearchJobId: null })
+  useJobSearchStore.setState({
+    activeSearchJobId: null,
+    selectedJob: null,
+    selectedSources: [],
+    selectedCompanies: [],
+  })
 })
 
 describe('ResultsList', () => {
-  it('renders nothing when no active search', () => {
+  it('renders nothing when no active search (landing handles the empty state)', () => {
     const { container } = render(<ResultsList />, { wrapper })
-    expect(container.firstChild).toBeNull()
+    expect(container).toBeEmptyDOMElement()
   })
 
   it('shows loading spinner when status is running', async () => {
@@ -51,6 +58,8 @@ describe('ResultsList', () => {
       status: 'running',
       total_results: null,
       error: null,
+      completed_adapters: 0,
+      total_adapters: 11,
     })
 
     useJobSearchStore.setState({ activeSearchJobId: 'search-1' })
@@ -67,6 +76,8 @@ describe('ResultsList', () => {
       status: 'queued',
       total_results: null,
       error: null,
+      completed_adapters: 0,
+      total_adapters: 0,
     })
 
     useJobSearchStore.setState({ activeSearchJobId: 'search-1' })
@@ -83,8 +94,11 @@ describe('ResultsList', () => {
       status: 'complete',
       total_results: 0,
       error: null,
+      completed_adapters: 11,
+      total_adapters: 11,
     })
     mockListJobs.mockResolvedValue({ items: [], total: 0, page: 1, page_size: 20 })
+    mockGetJobFilters.mockResolvedValue({ sources: [], companies: [] })
 
     useJobSearchStore.setState({ activeSearchJobId: 'search-1' })
     render(<ResultsList />, { wrapper })
@@ -100,8 +114,11 @@ describe('ResultsList', () => {
       status: 'complete',
       total_results: 1,
       error: null,
+      completed_adapters: 11,
+      total_adapters: 11,
     })
     mockListJobs.mockResolvedValue({ items: [sampleJob], total: 1, page: 1, page_size: 20 })
+    mockGetJobFilters.mockResolvedValue({ sources: ['greenhouse'], companies: ['Acme Corp'] })
 
     useJobSearchStore.setState({ activeSearchJobId: 'search-1' })
     render(<ResultsList />, { wrapper })
@@ -122,4 +139,5 @@ describe('ResultsList', () => {
       expect(screen.getByRole('alert')).toBeInTheDocument()
     })
   })
+
 })

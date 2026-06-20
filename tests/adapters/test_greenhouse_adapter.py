@@ -1,4 +1,5 @@
 """Fixture-based tests for the Greenhouse adapter. Never hits live endpoints."""
+
 import json
 import re
 from pathlib import Path
@@ -33,6 +34,7 @@ def base_criteria() -> SearchCriteria:
 # 1. Happy-path: normalized postings returned
 # ---------------------------------------------------------------------------
 
+
 async def test_search_returns_normalized_postings(httpx_mock, adapter, base_criteria, monkeypatch):
     monkeypatch.setattr(settings, "greenhouse_companies", "acme")
 
@@ -64,6 +66,7 @@ async def test_search_returns_normalized_postings(httpx_mock, adapter, base_crit
 # 2. Remote-only filter: only "Remote" and "Remote - US" postings survive
 # ---------------------------------------------------------------------------
 
+
 async def test_remote_only_filter(httpx_mock, adapter, monkeypatch):
     monkeypatch.setattr(settings, "greenhouse_companies", "acme")
 
@@ -87,6 +90,7 @@ async def test_remote_only_filter(httpx_mock, adapter, monkeypatch):
 # 3. Query filter: only postings matching "python" are returned
 # ---------------------------------------------------------------------------
 
+
 async def test_query_filter(httpx_mock, adapter, monkeypatch):
     monkeypatch.setattr(settings, "greenhouse_companies", "acme")
 
@@ -107,6 +111,7 @@ async def test_query_filter(httpx_mock, adapter, monkeypatch):
 # ---------------------------------------------------------------------------
 # 4. HTML is stripped from the description field
 # ---------------------------------------------------------------------------
+
 
 async def test_html_stripped_from_description(httpx_mock, adapter, monkeypatch):
     monkeypatch.setattr(settings, "greenhouse_companies", "acme")
@@ -132,6 +137,7 @@ async def test_html_stripped_from_description(httpx_mock, adapter, monkeypatch):
 # 5. No slugs configured → returns [] without making any HTTP call
 # ---------------------------------------------------------------------------
 
+
 async def test_no_slugs_returns_empty(adapter, monkeypatch):
     monkeypatch.setattr(settings, "greenhouse_companies", "")
 
@@ -143,6 +149,7 @@ async def test_no_slugs_returns_empty(adapter, monkeypatch):
 # ---------------------------------------------------------------------------
 # 6. Malformed item (missing id/absolute_url) is skipped; valid items returned
 # ---------------------------------------------------------------------------
+
 
 async def test_malformed_item_skipped(httpx_mock, adapter, monkeypatch):
     monkeypatch.setattr(settings, "greenhouse_companies", "acme")
@@ -168,3 +175,47 @@ async def test_malformed_item_skipped(httpx_mock, adapter, monkeypatch):
     assert len(postings) == 3
     source_ids = {p.source_job_id for p in postings}
     assert source_ids == {"4001", "4002", "4003"}
+
+
+# ---------------------------------------------------------------------------
+# 7. Location filter: only postings whose location contains the search term
+# ---------------------------------------------------------------------------
+
+
+async def test_location_filter(httpx_mock, adapter, monkeypatch):
+    monkeypatch.setattr(settings, "greenhouse_companies", "acme")
+
+    fixture = _load_fixture()
+    # Add an India job alongside the existing US/Remote ones
+    fixture["jobs"].append({
+        "id": 4004,
+        "title": "ML Engineer",
+        "location": {"name": "Bangalore, India"},
+        "content": "<p>ML role in India.</p>",
+        "absolute_url": "https://boards.greenhouse.io/acme/jobs/4004",
+        "updated_at": "2024-05-05T00:00:00.000Z",
+    })
+
+    httpx_mock.add_response(url=_GREENHOUSE_URL_RE, json=fixture)
+
+    criteria = SearchCriteria(query="", location="India")
+    postings = await adapter.search(criteria)
+
+    # Only the Bangalore, India job matches; Remote and New York, NY do not.
+    assert len(postings) == 1
+    assert postings[0].source_job_id == "4004"
+
+
+async def test_location_filter_skipped_when_remote_only(httpx_mock, adapter, monkeypatch):
+    """remote_only=True bypasses the location filter so remote jobs always show."""
+    monkeypatch.setattr(settings, "greenhouse_companies", "acme")
+    httpx_mock.add_response(url=_GREENHOUSE_URL_RE, json=_load_fixture())
+
+    # remote_only + location — location filter must be ignored
+    criteria = SearchCriteria(query="", remote_only=True, location="India")
+    postings = await adapter.search(criteria)
+
+    # Jobs 4001 and 4003 are remote; India filter must not exclude them
+    assert len(postings) == 2
+    source_ids = {p.source_job_id for p in postings}
+    assert source_ids == {"4001", "4003"}

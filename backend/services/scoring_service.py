@@ -1,8 +1,10 @@
 """Score a resume against a parsed job description."""
+
 import json
 import logging
 
 from backend.llm import client as llm
+from backend.llm.parsing import extract_json
 from backend.llm.prompts import scorer as scorer_prompts
 
 logger = logging.getLogger(__name__)
@@ -19,7 +21,7 @@ async def score_resume(resume_text: str, parsed_jd: dict) -> tuple[int, str, lis
         cache_system=True,
     )
     try:
-        data = json.loads(raw)
+        data = extract_json(raw)
         return int(data["score"]), str(data["rationale"]), list(data.get("gaps", []))
     except (json.JSONDecodeError, KeyError, ValueError) as exc:
         logger.warning("scorer: failed to parse LLM response: %s (response len=%d)", exc, len(raw))

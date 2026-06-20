@@ -1,4 +1,5 @@
 """Fan-out search across all board adapters, dedup, and persist results."""
+
 import asyncio
 import logging
 import uuid
@@ -9,6 +10,7 @@ from sqlmodel import Session
 from backend.adapters.registry import get_all_adapters
 from backend.models.job_posting import JobPosting, SearchCriteria
 from backend.models.search_job import SearchJob, SearchJobStatus
+from backend.services.relevance import score_relevance
 
 logger = logging.getLogger(__name__)
 
@@ -25,65 +27,98 @@ def _deduplicate(postings: list[JobPosting]) -> list[JobPosting]:
     return unique
 
 
+async def _run_one(
+    adapter,
+    criteria: SearchCriteria,
+) -> tuple:
+    """Run a single adapter and return (adapter, postings, exc) — never raises."""
+    try:
+        return adapter, await adapter.search(criteria), None
+    except Exception as exc:  # noqa: BLE001
+        return adapter, None, exc
+
+
 async def run_search(
     search_job_id: uuid.UUID,
     criteria: SearchCriteria,
     session: Session,
 ) -> None:
-    """Run search across all adapters, dedup, persist results, update SearchJob."""
+    """Run search across all adapters incrementally, dedup, and persist results."""
     job = session.get(SearchJob, search_job_id)
     if not job:
         logger.error("search job %s not found", search_job_id)
         return
 
+    adapters = get_all_adapters()
     job.status = SearchJobStatus.running
+    job.total_adapters = len(adapters)
+    job.completed_adapters = 0
+    job.total_results = 0
     session.add(job)
     session.commit()
 
     try:
-        adapters = get_all_adapters()
         logger.info(
             "search %s: running query=%r adapters=%s",
             search_job_id,
             criteria.query,
             [a.source for a in adapters],
         )
-        raw_results = await asyncio.gather(
-            *[adapter.search(criteria) for adapter in adapters],
-            return_exceptions=True,
-        )
 
-        all_postings: list[JobPosting] = []
-        for adapter, result in zip(adapters, raw_results):
-            if isinstance(result, Exception):
-                logger.error("search %s: adapter=%s failed: %s", search_job_id, adapter.source, result)
+        # in-memory dedup carried across all adapter chunks within this run
+        seen: set[tuple[str, str]] = set()
+        running_total = 0
+
+        futs = [asyncio.ensure_future(_run_one(a, criteria)) for a in adapters]
+        for fut in asyncio.as_completed(futs):
+            adapter, result, exc = await fut
+
+            if exc is not None:
+                logger.error(
+                    "search %s: adapter=%s failed: %s",
+                    search_job_id,
+                    adapter.source,
+                    exc,
+                )
+                job.completed_adapters += 1
+                session.add(job)
+                session.commit()
                 continue
+
             logger.info(
                 "search %s: adapter=%s returned %d results",
                 search_job_id,
                 adapter.source,
                 len(result),
             )
-            all_postings.extend(result)
 
-        deduped = _deduplicate(all_postings)
-        logger.info(
-            "search %s: total=%d deduped=%d persisting",
-            search_job_id,
-            len(all_postings),
-            len(deduped),
-        )
+            # dedup against already-persisted postings from earlier adapters
+            new_postings: list[JobPosting] = []
+            for posting in result:
+                key = (posting.source, posting.source_job_id)
+                if key not in seen:
+                    seen.add(key)
+                    new_postings.append(posting)
 
-        for posting in deduped:
-            posting.search_job_id = search_job_id
-            session.add(posting)
+            for posting in new_postings:
+                posting.search_job_id = search_job_id
+                posting.user_id = job.user_id
+                posting.relevance_score = score_relevance(
+                    posting.title, posting.description, criteria.query
+                )
+                session.add(posting)
+
+            running_total += len(new_postings)
+            job.completed_adapters += 1
+            job.total_results = running_total
+            session.add(job)
+            session.commit()
 
         job.status = SearchJobStatus.complete
-        job.total_results = len(deduped)
         job.completed_at = datetime.now(UTC)
         session.add(job)
         session.commit()
-        logger.info("search %s: complete — %d jobs saved", search_job_id, len(deduped))
+        logger.info("search %s: complete — %d jobs saved", search_job_id, running_total)
 
     except Exception as exc:
         logger.exception("search %s: failed: %s", search_job_id, exc)

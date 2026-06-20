@@ -1,0 +1,47 @@
+{
+  "friendlyNotice": "...",
+  "apiVersion": 2,
+  "lastUpdated": "2024-05-02 12:00:00",
+  "jobCount": 3,
+  "jobs": [
+    {
+      "id": 12345,
+      "url": "https://jobicy.com/jobs/12345-senior-python-engineer",
+      "jobTitle": "Senior Python Engineer",
+      "companyName": "TechCorp",
+      "jobGeo": "Worldwide",
+      "jobType": "full-time",
+      "pubDate": "2024-05-01 10:00:00",
+      "jobDescription": "<p>Senior <strong>Python</strong> Engineer role at TechCorp.</p>",
+      "annualSalaryMin": 120000,
+      "annualSalaryMax": 160000,
+      "salaryCurrency": "USD"
+    },
+    {
+      "id": 12346,
+      "url": "https://jobicy.com/jobs/12346-backend-engineer",
+      "jobTitle": "Backend Engineer",
+      "companyName": "StartupXYZ",
+      "jobGeo": "USA Only",
+      "jobType": "full-time",
+      "pubDate": "2024-05-02 09:00:00",
+      "jobDescription": "<p>Backend Engineer position at StartupXYZ.</p>",
+      "annualSalaryMin": null,
+      "annualSalaryMax": null,
+      "salaryCurrency": null
+    },
+    {
+      "id": 12347,
+      "url": "https://jobicy.com/jobs/12347-ml-engineer",
+      "jobTitle": "ML Engineer",
+      "companyName": "AI Labs",
+      "jobGeo": "Europe",
+      "jobType": "contract",
+      "pubDate": "2024-04-28 14:00:00",
+      "jobDescription": "<p>ML Engineer contract at AI Labs.</p>",
+      "annualSalaryMin": 100000,
+      "annualSalaryMax": 130000,
+      "salaryCurrency": "EUR"
+    }
+  ]
+}

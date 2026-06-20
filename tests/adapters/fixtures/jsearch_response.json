@@ -1,0 +1,94 @@
+{
+  "status": "OK",
+  "request_id": "test-request-id-001",
+  "parameters": {
+    "query": "software engineer",
+    "num_pages": "3",
+    "date_posted": "all"
+  },
+  "data": {
+    "jobs": [
+      {
+        "job_id": "jsearch_001",
+        "employer_name": "TechCorp Inc",
+        "employer_logo": "https://example.com/logo.png",
+        "employer_website": "https://techcorp.example.com",
+        "job_publisher": "LinkedIn",
+        "job_employment_type": "FULLTIME",
+        "job_title": "Senior Python Engineer",
+        "job_apply_link": "https://techcorp.example.com/jobs/001",
+        "job_apply_is_direct": true,
+        "job_description": "We are looking for a Senior Python Engineer to join our team. You will work on large-scale distributed systems using Python, FastAPI, and PostgreSQL.",
+        "job_is_remote": true,
+        "job_posted_at_datetime_utc": "2024-05-01T00:00:00.000Z",
+        "job_city": null,
+        "job_state": null,
+        "job_country": "US",
+        "job_latitude": null,
+        "job_longitude": null,
+        "job_min_salary": 130000,
+        "job_max_salary": 180000,
+        "job_salary_currency": "USD",
+        "job_salary_period": "YEAR",
+        "job_highlights": {
+          "Qualifications": ["5+ years Python", "FastAPI experience"],
+          "Responsibilities": ["Build APIs", "Design systems"]
+        },
+        "job_required_skills": ["Python", "FastAPI", "PostgreSQL"]
+      },
+      {
+        "job_id": "jsearch_002",
+        "employer_name": "StartupXYZ",
+        "employer_logo": null,
+        "employer_website": null,
+        "job_publisher": "Indeed",
+        "job_employment_type": "FULLTIME",
+        "job_title": "Backend Developer",
+        "job_apply_link": "https://startupxyz.example.com/jobs/002",
+        "job_apply_is_direct": false,
+        "job_description": "Seeking a Backend Developer to build scalable APIs and microservices in our NYC office.",
+        "job_is_remote": false,
+        "job_posted_at_datetime_utc": "2024-05-02T12:00:00.000Z",
+        "job_city": "New York",
+        "job_state": "NY",
+        "job_country": "US",
+        "job_latitude": 40.7128,
+        "job_longitude": -74.006,
+        "job_min_salary": null,
+        "job_max_salary": null,
+        "job_salary_currency": null,
+        "job_salary_period": null,
+        "job_highlights": {
+          "Qualifications": ["3+ years experience"],
+          "Responsibilities": ["Build REST APIs"]
+        },
+        "job_required_skills": ["Node.js", "REST APIs"]
+      },
+      {
+        "job_id": "jsearch_003",
+        "employer_name": "GlobalTech",
+        "employer_logo": null,
+        "employer_website": "https://globaltech.example.com",
+        "job_publisher": "Glassdoor",
+        "job_employment_type": "CONTRACTOR",
+        "job_title": "Data Engineer",
+        "job_apply_link": "https://globaltech.example.com/jobs/003",
+        "job_apply_is_direct": true,
+        "job_description": "Contract Data Engineer role to build ETL pipelines and data warehouses using Spark and dbt.",
+        "job_is_remote": false,
+        "job_posted_at_datetime_utc": "2024-04-28T09:30:00.000Z",
+        "job_city": "Austin",
+        "job_state": "TX",
+        "job_country": "US",
+        "job_latitude": 30.2672,
+        "job_longitude": -97.7431,
+        "job_min_salary": 80,
+        "job_max_salary": 110,
+        "job_salary_currency": "USD",
+        "job_salary_period": "HOUR",
+        "job_highlights": {},
+        "job_required_skills": ["Spark", "dbt", "SQL"]
+      }
+    ]
+  }
+}

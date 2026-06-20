@@ -1,4 +1,5 @@
 """Fixture-based tests for the Lever adapter. Never hits live endpoints."""
+
 import json
 import re
 from pathlib import Path
@@ -33,6 +34,7 @@ def base_criteria() -> SearchCriteria:
 # 1. Happy-path: normalized postings returned
 # ---------------------------------------------------------------------------
 
+
 async def test_search_returns_normalized_postings(httpx_mock, adapter, base_criteria, monkeypatch):
     monkeypatch.setattr(settings, "lever_companies", "acme")
 
@@ -64,6 +66,7 @@ async def test_search_returns_normalized_postings(httpx_mock, adapter, base_crit
 # 2. Remote-only filter: only the "remote" workplaceType posting survives
 # ---------------------------------------------------------------------------
 
+
 async def test_remote_only_filter(httpx_mock, adapter, monkeypatch):
     monkeypatch.setattr(settings, "lever_companies", "acme")
 
@@ -83,6 +86,7 @@ async def test_remote_only_filter(httpx_mock, adapter, monkeypatch):
 # ---------------------------------------------------------------------------
 # 3. workplaceType field maps to RemoteStatus correctly
 # ---------------------------------------------------------------------------
+
 
 async def test_workplace_type_mapping(httpx_mock, adapter, monkeypatch):
     monkeypatch.setattr(settings, "lever_companies", "acme")
@@ -105,6 +109,7 @@ async def test_workplace_type_mapping(httpx_mock, adapter, monkeypatch):
 # 4. Query filter: only postings matching "python" are returned
 # ---------------------------------------------------------------------------
 
+
 async def test_query_filter(httpx_mock, adapter, monkeypatch):
     monkeypatch.setattr(settings, "lever_companies", "acme")
 
@@ -124,6 +129,7 @@ async def test_query_filter(httpx_mock, adapter, monkeypatch):
 # ---------------------------------------------------------------------------
 # 5. createdAt millisecond timestamp is converted to YYYY-MM-DD
 # ---------------------------------------------------------------------------
+
 
 async def test_ms_timestamp_parsed(httpx_mock, adapter, monkeypatch):
     monkeypatch.setattr(settings, "lever_companies", "acme")
@@ -149,6 +155,7 @@ async def test_ms_timestamp_parsed(httpx_mock, adapter, monkeypatch):
 # 6. No slugs configured → returns [] without making any HTTP call
 # ---------------------------------------------------------------------------
 
+
 async def test_no_slugs_returns_empty(adapter, monkeypatch):
     monkeypatch.setattr(settings, "lever_companies", "")
 
@@ -160,6 +167,7 @@ async def test_no_slugs_returns_empty(adapter, monkeypatch):
 # ---------------------------------------------------------------------------
 # 7. descriptionPlain preferred over HTML description; HTML stripped as fallback
 # ---------------------------------------------------------------------------
+
 
 async def test_descriptionPlain_preferred_over_html(httpx_mock, adapter, monkeypatch):
     monkeypatch.setattr(settings, "lever_companies", "acme")
@@ -175,8 +183,53 @@ async def test_descriptionPlain_preferred_over_html(httpx_mock, adapter, monkeyp
 
     # abc-111 and abc-222 have descriptionPlain — used as-is (no HTML tags)
     assert "<p>" not in by_id["abc-111"].description
-    assert by_id["abc-111"].description == "We are looking for a Senior Software Engineer with Python experience."
+    assert (
+        by_id["abc-111"].description
+        == "We are looking for a Senior Software Engineer with Python experience."
+    )
 
     # abc-333 has only HTML description — must be stripped
     assert "<p>" not in by_id["abc-333"].description
     assert "DevOps engineer with Kubernetes experience." in by_id["abc-333"].description
+
+
+# ---------------------------------------------------------------------------
+# 8. Location filter: only postings whose location contains the search term
+# ---------------------------------------------------------------------------
+
+
+async def test_location_filter(httpx_mock, adapter, monkeypatch):
+    monkeypatch.setattr(settings, "lever_companies", "acme")
+
+    fixture = _load_fixture()
+    fixture.append({
+        "id": "abc-444",
+        "text": "Backend Engineer",
+        "categories": {"location": "Bangalore, India"},
+        "descriptionPlain": "Backend role based in India.",
+        "hostedUrl": "https://jobs.lever.co/acme/abc-444",
+        "createdAt": 1714694400000,
+        "workplaceType": "onsite",
+    })
+
+    httpx_mock.add_response(url=_LEVER_URL_RE, json=fixture)
+
+    criteria = SearchCriteria(query="", location="India")
+    postings = await adapter.search(criteria)
+
+    # Only the Bangalore, India job matches
+    assert len(postings) == 1
+    assert postings[0].source_job_id == "abc-444"
+
+
+async def test_location_filter_skipped_when_remote_only(httpx_mock, adapter, monkeypatch):
+    """remote_only=True bypasses the location filter so remote jobs always show."""
+    monkeypatch.setattr(settings, "lever_companies", "acme")
+    httpx_mock.add_response(url=_LEVER_URL_RE, json=_load_fixture())
+
+    criteria = SearchCriteria(query="", remote_only=True, location="India")
+    postings = await adapter.search(criteria)
+
+    # Only abc-111 has workplaceType=remote; India filter must not exclude it
+    assert len(postings) == 1
+    assert postings[0].source_job_id == "abc-111"

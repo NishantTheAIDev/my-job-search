@@ -1,0 +1,19 @@
+{
+  "hits": [
+    {
+      "title": "Meta layoffs: the math behind the cuts",
+      "url": "https://example.com/meta-layoffs",
+      "created_at_i": 1781000000
+    },
+    {
+      "title": "Ask HN: Are you worried about layoffs?",
+      "url": null,
+      "created_at_i": 1781000100
+    },
+    {
+      "title": "Tech hiring rebounds in mid-2026",
+      "url": "https://example.org/hiring-rebound",
+      "created_at_i": 1780900000
+    }
+  ]
+}

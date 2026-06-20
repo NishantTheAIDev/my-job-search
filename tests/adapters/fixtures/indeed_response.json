@@ -1,0 +1,45 @@
+{
+  "data": {
+    "jobSearch": {
+      "pageInfo": {"nextCursor": null},
+      "results": [
+        {
+          "job": {
+            "key": "3001",
+            "title": "Senior Software Engineer",
+            "datePublished": 1714521600000,
+            "description": {"html": "<p>Build scalable <strong>backend</strong> systems in Python.</p>"},
+            "location": {"city": "San Francisco", "admin1Code": "CA", "countryCode": "US", "formatted": {"long": "San Francisco, CA"}},
+            "compensation": {"baseSalary": null, "estimated": {"currencyCode": "USD", "baseSalary": {"unitOfWork": "YEAR", "range": {"min": 150000, "max": 200000}}}, "currencyCode": "USD"},
+            "attributes": [{"key": "jt_fulltime", "label": "Full-time"}],
+            "employer": {"name": "TechCorp", "relativeCompanyPageUrl": "/cmp/techcorp"}
+          }
+        },
+        {
+          "job": {
+            "key": "3002",
+            "title": "Remote Python Developer",
+            "datePublished": 1714608000000,
+            "description": {"html": "<p>100% remote role. Work from anywhere.</p>"},
+            "location": {"city": "Remote", "admin1Code": null, "countryCode": "US", "formatted": {"long": "Remote"}},
+            "compensation": {"baseSalary": null, "estimated": null, "currencyCode": "USD"},
+            "attributes": [{"key": "attr_remote", "label": "Remote"}],
+            "employer": {"name": "StartupCo", "relativeCompanyPageUrl": "/cmp/startupco"}
+          }
+        },
+        {
+          "job": {
+            "key": "3003",
+            "title": "Data Engineer",
+            "datePublished": 1714435200000,
+            "description": {"html": "<p>Data engineering role in New York.</p>"},
+            "location": {"city": "New York", "admin1Code": "NY", "countryCode": "US", "formatted": {"long": "New York, NY"}},
+            "compensation": {"baseSalary": {"unitOfWork": "YEAR", "range": {"min": 120000, "max": 160000}}, "estimated": null, "currencyCode": "USD"},
+            "attributes": [{"key": "jt_fulltime", "label": "Full-time"}],
+            "employer": {"name": "DataCorp", "relativeCompanyPageUrl": "/cmp/datacorp"}
+          }
+        }
+      ]
+    }
+  }
+}

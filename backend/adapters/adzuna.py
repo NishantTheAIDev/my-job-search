@@ -1,5 +1,7 @@
 """Adzuna job board adapter (free public REST API)."""
+
 import logging
+import re
 from datetime import datetime
 
 import httpx
@@ -11,7 +13,56 @@ from backend.models.job_posting import JobPosting, RemoteStatus, SearchCriteria
 
 logger = logging.getLogger(__name__)
 
-_BASE_URL = "https://api.adzuna.com/v1/api/jobs/us/search/{page}"
+_BASE_URL = "https://api.adzuna.com/v1/api/jobs/{country}/search/{page}"
+
+# Country names/aliases → Adzuna two-letter country code.
+# Checked longest-first so "united kingdom" wins over "uk".
+_COUNTRY_CODES: dict[str, str] = {
+    "australia": "au",
+    "austria": "at",
+    "belgium": "be",
+    "brazil": "br",
+    "canada": "ca",
+    "india": "in",
+    "germany": "de",
+    "deutschland": "de",
+    "great britain": "gb",
+    "united kingdom": "gb",
+    "england": "gb",
+    "uk": "gb",
+    "mexico": "mx",
+    "netherlands": "nl",
+    "holland": "nl",
+    "new zealand": "nz",
+    "poland": "pl",
+    "singapore": "sg",
+    "south africa": "za",
+    "united states": "us",
+    "usa": "us",
+}
+
+
+def _parse_location(location: str | None) -> tuple[str, str | None]:
+    """Return (adzuna_country_code, city_or_area_for_where_param).
+
+    Strips the country name from the location string so the remainder
+    (e.g. "Bangalore" from "Bangalore, India") becomes the ``where`` param.
+    Defaults to the US endpoint when no known country is detected.
+    """
+    if not location:
+        return "us", None
+
+    loc = location.strip()
+    loc_lower = loc.lower()
+
+    for name in sorted(_COUNTRY_CODES, key=len, reverse=True):
+        if re.search(r"\b" + re.escape(name) + r"\b", loc_lower):
+            code = _COUNTRY_CODES[name]
+            city = re.sub(r"\b" + re.escape(name) + r"\b", "", loc, flags=re.IGNORECASE).strip(" ,")
+            return code, city if city else None
+
+    # No country found — default to US, pass the whole string as where
+    return "us", loc
 
 
 def _parse_compensation(result: dict) -> str | None:
@@ -66,8 +117,7 @@ class AdzunaAdapter(JobBoardAdapter):
         wait=wait_exponential(min=1, max=30),
         stop=stop_after_attempt(3),
     )
-    async def _fetch_page(self, params: dict, page: int) -> dict:
-        url = _BASE_URL.format(page=page)
+    async def _fetch_page(self, url: str, params: dict) -> dict:
         async with httpx.AsyncClient(timeout=10.0) as client:
             resp = await client.get(url, params=params)
             resp.raise_for_status()
@@ -78,6 +128,9 @@ class AdzunaAdapter(JobBoardAdapter):
             logger.warning("adzuna: app_id or app_key not configured, skipping")
             return []
 
+        country, city = _parse_location(criteria.location)
+        url = _BASE_URL.format(country=country, page=criteria.page)
+
         params: dict = {
             "app_id": settings.adzuna_app_id,
             "app_key": settings.adzuna_app_key.get_secret_value(),
@@ -85,14 +138,14 @@ class AdzunaAdapter(JobBoardAdapter):
             "results_per_page": 20,
             "content-type": "application/json",
         }
-        if criteria.location and not criteria.remote_only:
-            params["where"] = criteria.location
         if criteria.remote_only:
             params["where"] = "remote"
+        elif city:
+            params["where"] = city
         if criteria.posted_within_days:
             params["max_days_old"] = criteria.posted_within_days
 
-        raw = await self._fetch_page(params, criteria.page)
+        raw = await self._fetch_page(url, params)
         results = raw.get("results") or []
 
         postings: list[JobPosting] = []
@@ -105,5 +158,7 @@ class AdzunaAdapter(JobBoardAdapter):
                 continue
             postings.append(posting)
 
-        logger.info("adzuna: query=%r page=%d → %d results", criteria.query, criteria.page, len(postings))
+        logger.info(
+            "adzuna: query=%r page=%d → %d results", criteria.query, criteria.page, len(postings)
+        )
         return postings

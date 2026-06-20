@@ -1,18 +1,19 @@
 """Fixture-based tests for the Adzuna adapter. Never hits live endpoints."""
+
 import json
 import re
 from pathlib import Path
 
 import pytest
 
-from backend.adapters.adzuna import AdzunaAdapter
+from backend.adapters.adzuna import AdzunaAdapter, _parse_location
 from backend.config import settings
 from backend.models.job_posting import RemoteStatus, SearchCriteria
 
 FIXTURES_DIR = Path(__file__).parent / "fixtures"
 
-# Match the search endpoint regardless of query-string parameters.
-_ADZUNA_URL_RE = re.compile(r"https://api\.adzuna\.com/v1/api/jobs/us/search/\d+")
+# Match the search endpoint for any country code.
+_ADZUNA_URL_RE = re.compile(r"https://api\.adzuna\.com/v1/api/jobs/\w+/search/\d+")
 
 
 def _load_fixture() -> dict:
@@ -32,6 +33,7 @@ def base_criteria() -> SearchCriteria:
 # ---------------------------------------------------------------------------
 # 1. Happy-path: normalized postings returned
 # ---------------------------------------------------------------------------
+
 
 async def test_search_returns_normalized_postings(httpx_mock, adapter, base_criteria, monkeypatch):
     monkeypatch.setattr(settings, "adzuna_app_id", "test_id")
@@ -66,6 +68,7 @@ async def test_search_returns_normalized_postings(httpx_mock, adapter, base_crit
 # 2. Remote-only post-filter: only the "Remote" location posting survives
 # ---------------------------------------------------------------------------
 
+
 async def test_remote_only_filter(httpx_mock, adapter, monkeypatch):
     monkeypatch.setattr(settings, "adzuna_app_id", "test_id")
     monkeypatch.setattr(settings, "adzuna_app_key", settings.adzuna_app_key.__class__("test_key"))
@@ -86,6 +89,7 @@ async def test_remote_only_filter(httpx_mock, adapter, monkeypatch):
 # ---------------------------------------------------------------------------
 # 3. Compensation formatting
 # ---------------------------------------------------------------------------
+
 
 async def test_compensation_formatting(httpx_mock, adapter, base_criteria, monkeypatch):
     monkeypatch.setattr(settings, "adzuna_app_id", "test_id")
@@ -111,6 +115,7 @@ async def test_compensation_formatting(httpx_mock, adapter, base_criteria, monke
 # 4. Missing credentials → empty list, no HTTP call made
 # ---------------------------------------------------------------------------
 
+
 async def test_missing_credentials_returns_empty(adapter, monkeypatch):
     monkeypatch.setattr(settings, "adzuna_app_id", "")
 
@@ -122,6 +127,7 @@ async def test_missing_credentials_returns_empty(adapter, monkeypatch):
 # ---------------------------------------------------------------------------
 # 5. Malformed item is skipped; valid items are still returned
 # ---------------------------------------------------------------------------
+
 
 async def test_malformed_item_skipped(httpx_mock, adapter, base_criteria, monkeypatch):
     monkeypatch.setattr(settings, "adzuna_app_id", "test_id")
@@ -149,3 +155,44 @@ async def test_malformed_item_skipped(httpx_mock, adapter, base_criteria, monkey
     assert len(postings) == 3
     source_ids = {p.source_job_id for p in postings}
     assert source_ids == {"1001", "1002", "1003"}
+
+
+# ---------------------------------------------------------------------------
+# 6. _parse_location: country extraction and city splitting
+# ---------------------------------------------------------------------------
+
+
+def test_parse_location_country_only():
+    assert _parse_location("India") == ("in", None)
+    assert _parse_location("United Kingdom") == ("gb", None)
+    assert _parse_location("Germany") == ("de", None)
+
+
+def test_parse_location_city_and_country():
+    assert _parse_location("Bangalore, India") == ("in", "Bangalore")
+    assert _parse_location("London, UK") == ("gb", "London")
+    assert _parse_location("Berlin, Germany") == ("de", "Berlin")
+
+
+def test_parse_location_no_country_defaults_to_us():
+    country, city = _parse_location("New York")
+    assert country == "us"
+    assert city == "New York"
+
+
+def test_parse_location_none_defaults_to_us():
+    assert _parse_location(None) == ("us", None)
+
+
+async def test_parse_location_uses_india_endpoint(httpx_mock, adapter, monkeypatch):
+    """When location contains 'India', the request must go to the /in/ endpoint."""
+    monkeypatch.setattr(settings, "adzuna_app_id", "test_id")
+    monkeypatch.setattr(settings, "adzuna_app_key", settings.adzuna_app_key.__class__("test_key"))
+
+    india_url_re = re.compile(r"https://api\.adzuna\.com/v1/api/jobs/in/search/\d+")
+    httpx_mock.add_response(url=india_url_re, json=_load_fixture())
+
+    criteria = SearchCriteria(query="software engineer", location="India")
+    postings = await adapter.search(criteria)
+
+    assert len(postings) == 3  # fixture data returned, endpoint was /in/

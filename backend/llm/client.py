@@ -1,4 +1,5 @@
 """Centralized Anthropic SDK client with retry and prompt caching."""
+
 import logging
 import time
 
@@ -11,6 +12,8 @@ from tenacity import (
     wait_exponential,
 )
 
+from backend.config import settings
+
 logger = logging.getLogger(__name__)
 
 MODEL = "claude-sonnet-4-6"
@@ -21,7 +24,9 @@ _client: anthropic.AsyncAnthropic | None = None
 def get_client() -> anthropic.AsyncAnthropic:
     global _client
     if _client is None:
-        _client = anthropic.AsyncAnthropic()  # reads ANTHROPIC_API_KEY from env
+        # The key is loaded from .env via pydantic-settings (backend/config.py);
+        # it is NOT exported to os.environ, so pass it explicitly.
+        _client = anthropic.AsyncAnthropic(api_key=settings.anthropic_api_key.get_secret_value())
     return _client
 
 

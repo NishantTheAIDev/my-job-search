@@ -1,0 +1,29 @@
+<?xml version="1.0" encoding="UTF-8"?>
+<rss version="2.0" xmlns:wwr="https://weworkremotely.com">
+  <channel>
+    <title>We Work Remotely: Remote Jobs</title>
+    <link>https://weworkremotely.com</link>
+    <description>Remote jobs from We Work Remotely</description>
+    <item>
+      <title><![CDATA[TechCorp: Senior Python Engineer]]></title>
+      <link>https://weworkremotely.com/remote-jobs/view/12345-senior-python-engineer</link>
+      <pubDate>Wed, 01 May 2024 10:00:00 +0000</pubDate>
+      <description><![CDATA[<p>We are looking for a <strong>Senior Python Engineer</strong> to join our remote team.</p>]]></description>
+      <guid isPermaLink="true">https://weworkremotely.com/remote-jobs/view/12345-senior-python-engineer</guid>
+    </item>
+    <item>
+      <title><![CDATA[Acme Corp: Frontend Developer]]></title>
+      <link>https://weworkremotely.com/remote-jobs/view/12346-frontend-developer</link>
+      <pubDate>Thu, 02 May 2024 09:00:00 +0000</pubDate>
+      <description><![CDATA[<p>Frontend Developer position at <em>Acme Corp</em>.</p>]]></description>
+      <guid isPermaLink="true">https://weworkremotely.com/remote-jobs/view/12346-frontend-developer</guid>
+    </item>
+    <item>
+      <title><![CDATA[AI Labs: ML Engineer]]></title>
+      <link>https://weworkremotely.com/remote-jobs/view/12347-ml-engineer</link>
+      <pubDate>Sun, 28 Apr 2024 14:00:00 +0000</pubDate>
+      <description><![CDATA[<p>ML Engineer role at AI Labs.</p>]]></description>
+      <guid isPermaLink="true">https://weworkremotely.com/remote-jobs/view/12347-ml-engineer</guid>
+    </item>
+  </channel>
+</rss>
