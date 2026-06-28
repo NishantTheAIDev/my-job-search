@@ -6,7 +6,7 @@ An AI-powered job search and application assistant. It fans out across many job 
 
 1. **Register / log in** — create an account; all your resumes, searches, and applications are private to you.
 2. **Upload your resume** — the app extracts the text and uses it as the base for all tailoring.
-3. **Search for jobs** — fans out concurrently across all configured boards (Adzuna, JSearch, LinkedIn, Indeed, Remotive, The Muse, Greenhouse, Lever, Arbeitnow, Jobicy, We Work Remotely). Results are deduplicated and scored. One board failing never aborts the search.
+3. **Search for jobs** — fans out concurrently across all configured boards (Adzuna, JSearch, LinkedIn, Indeed, Remotive, The Muse, Greenhouse, Lever, Ashby, Arbeitnow, Jobicy, We Work Remotely, Y Combinator). Results are deduplicated and scored. One board failing never aborts the search.
 4. **Prepare an application** — Claude parses the job description, scores your resume against it (0–100), tailors the resume, and drafts a cover letter.
 5. **Review & edit** — see a line-by-line diff of resume changes and the cover letter draft; revise either with a follow-up instruction or edit directly.
 6. **Save or reject** — save the tailored application for your records, or reject it. Both transitions are audit-logged. **Nothing is ever submitted to a job board.**
@@ -47,9 +47,10 @@ ADZUNA_APP_ID=your_app_id           # recommended for job search
 ADZUNA_APP_KEY=your_app_key
 JSEARCH_API_KEY=your_rapidapi_key   # optional: LinkedIn/Indeed/Glassdoor aggregator
 
-# Optional: comma-separated company slugs for additional boards
+# Optional: comma-separated company slugs for additional boards (Greenhouse/Lever/Ashby)
 GREENHOUSE_COMPANIES=anthropic,databricks,stripe,figma
 LEVER_COMPANIES=netflix
+ASHBY_COMPANIES=linear
 
 # Database (defaults to the local Docker Postgres below)
 # DATABASE_URL=postgresql+psycopg://jobsearch:jobsearch@localhost:5432/jobsearch
@@ -58,7 +59,18 @@ LEVER_COMPANIES=netflix
 # JWT_SECRET=change-me-in-production
 ```
 
-Several boards (LinkedIn, Remotive, Arbeitnow, Jobicy, We Work Remotely, and the Greenhouse/Lever public APIs) need no credentials at all.
+Several boards (LinkedIn, Remotive, Arbeitnow, Jobicy, We Work Remotely, Y Combinator, and the Greenhouse/Lever/Ashby public APIs) need no credentials at all. The Y Combinator adapter pulls YC's featured jobs feed with zero config (disable with `YCOMBINATOR_ENABLED=false`).
+
+**Populating YC company slugs:** to fill the Greenhouse/Lever/Ashby slug lists with hiring Y Combinator companies, run the offline resolver — it probes the public board APIs and prints ready-to-paste `*_COMPANIES=` lines:
+
+```bash
+make yc-ats-sample            # first 50 hiring YC companies → yc_ats.env (quick)
+make yc-ats-sample limit=200  # first 200
+make yc-ats                   # all hiring YC companies (slow)
+# or directly: uv run python scripts/refresh_yc_ats.py --limit 50 --out yc_ats.env
+```
+
+Slug resolution is heuristic (name collisions are possible), so skim `yc_ats.env` before pasting the three lines into `.env`.
 
 ### 3. Start Postgres and apply migrations
 
@@ -149,6 +161,8 @@ my-job-search/
 ├── pyproject.toml              # backend deps + tool config
 ├── docker-compose.yml          # local Postgres
 ├── alembic.ini + alembic/      # database migrations
+├── scripts/                    # offline maintenance tools
+│   └── refresh_yc_ats.py       # resolve hiring YC companies → ATS slug lists
 ├── .env.example                # copy to .env and fill in keys
 │
 ├── backend/
@@ -191,7 +205,8 @@ my-job-search/
 │       ├── registry.py         # Source → adapter mapping
 │       ├── adzuna.py jsearch.py linkedin.py indeed.py
 │       ├── remotive.py themuse.py arbeitnow.py jobicy.py weworkremotely.py
-│       └── greenhouse.py lever.py   # public board APIs (no auth)
+│       ├── ycombinator.py            # YC featured jobs landing feed (no auth)
+│       └── greenhouse.py lever.py ashby.py   # public board APIs (no auth)
 │
 ├── frontend/src/
 │   ├── types/index.ts          # TypeScript mirrors of backend schemas

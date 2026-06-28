@@ -8,11 +8,15 @@ SHELL := /bin/bash
 # Default Alembic revision message; override: make migrate-new m="add x"
 m ?= migration
 
+# YC→ATS resolver output file and sample size; override: make yc-ats-sample limit=100
+out ?= yc_ats.env
+limit ?= 50
+
 .DEFAULT_GOAL := help
 
 .PHONY: help install db-up db-down db-logs db-shell migrate migrate-new migrate-down \
         start run dev backend frontend test test-backend test-frontend \
-        lint lint-fix format build check setup clean
+        lint lint-fix format build check setup clean yc-ats yc-ats-sample
 
 help: ## Show this help
 	@grep -E '^[a-zA-Z0-9_-]+:.*?## .*$$' $(MAKEFILE_LIST) \
@@ -94,6 +98,14 @@ build: ## Type-check + production build of the frontend
 	cd frontend && npm run build
 
 check: lint test build ## Lint, test, and build everything (pre-push gate)
+
+# --- YC company slugs (Approach B) ------------------------------------------
+
+yc-ats: ## Resolve ALL hiring YC companies' ATS slugs → $(out) (slow; paste into .env)
+	uv run python scripts/refresh_yc_ats.py --out $(out)
+
+yc-ats-sample: ## Resolve first N YC companies (default 50): make yc-ats-sample limit=100
+	uv run python scripts/refresh_yc_ats.py --limit $(limit) --out $(out)
 
 # --- Cleanup ----------------------------------------------------------------
 
