@@ -14,3 +14,6 @@ data/
 
 # Environment secrets
 .env
+
+# YC→ATS resolver output (scripts/refresh_yc_ats.py); paste slugs into .env instead
+yc_ats.env
