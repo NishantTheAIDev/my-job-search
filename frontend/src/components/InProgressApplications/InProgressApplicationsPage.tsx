@@ -1,6 +1,6 @@
-import { useQuery } from '@tanstack/react-query'
+import { useMutation, useQuery, useQueryClient } from '@tanstack/react-query'
 import { useJobSearchStore } from '../../store/useJobSearchStore'
-import { listInProgressApplications } from '../../api/applications'
+import { deleteApplication, listInProgressApplications } from '../../api/applications'
 import type { InProgressApplicationItem } from '../../api/applications'
 import { Logo } from '../shared/Logo'
 import { LoadingSpinner } from '../shared/LoadingSpinner'
@@ -19,6 +19,7 @@ export function InProgressApplicationsPage() {
   const setActiveApplication = useJobSearchStore((s) => s.setActiveApplication)
   const setWorkspaceOrigin = useJobSearchStore((s) => s.setWorkspaceOrigin)
   const activeSearchJobId = useJobSearchStore((s) => s.activeSearchJobId)
+  const queryClient = useQueryClient()
 
   const { data, isLoading, isError, refetch } = useQuery({
     queryKey: ['applications', 'in-progress'],
@@ -29,14 +30,22 @@ export function InProgressApplicationsPage() {
     refetchInterval: 5_000,
   })
 
+  const deleteMutation = useMutation({
+    mutationFn: (id: string) => deleteApplication(id),
+    onSuccess: () => {
+      queryClient.invalidateQueries({ queryKey: ['applications', 'in-progress'] })
+      queryClient.invalidateQueries({ queryKey: ['applications'] })
+    },
+  })
+
   function handleBack() {
     setShowInProgressApplications(false)
   }
 
   function handleOpen(item: InProgressApplicationItem) {
-    // The workspace is keyed by the job posting id. Origin 'home' so closing the
-    // workspace returns to the landing page rather than unrelated search results.
-    setWorkspaceOrigin('home')
+    // Origin 'in-progress' so closing the workspace returns to this page
+    // rather than the landing page or unrelated search results.
+    setWorkspaceOrigin('in-progress')
     setActiveApplication(item.job_posting_id)
     setShowInProgressApplications(false)
   }
@@ -118,11 +127,11 @@ export function InProgressApplicationsPage() {
                 const startedDate = formatPostedDate(item.created_at)
                 const badge = STATUS_BADGE[item.status]
                 return (
-                  <li key={item.id}>
+                  <li key={item.id} className="flex items-stretch">
                     <button
                       onClick={() => handleOpen(item)}
                       aria-label={`Open application: ${item.job_title}${item.company ? ` at ${item.company}` : ''} (${badge.label})`}
-                      className="flex w-full items-center gap-4 px-5 py-4 text-left transition hover:bg-slate-50 focus:outline-none focus-visible:bg-indigo-50"
+                      className="flex flex-1 items-center gap-4 px-5 py-4 text-left transition hover:bg-slate-50 focus:outline-none focus-visible:bg-indigo-50"
                     >
                       <ScoreBadge score={item.match_score ?? 0} size="sm" />
 
@@ -156,6 +165,23 @@ export function InProgressApplicationsPage() {
                         <path fillRule="evenodd" d="M6.22 4.22a.75.75 0 0 1 1.06 0l3.25 3.25a.75.75 0 0 1 0 1.06l-3.25 3.25a.75.75 0 0 1-1.06-1.06L8.94 8 6.22 5.28a.75.75 0 0 1 0-1.06Z" clipRule="evenodd" />
                       </svg>
                     </button>
+
+                    {/* Delete button — sibling of the open button, not nested inside it */}
+                    <div className="flex items-center pr-4">
+                      <button
+                        onClick={() => {
+                          if (window.confirm(`Delete application for "${item.job_title}"?`)) {
+                            deleteMutation.mutate(item.id)
+                          }
+                        }}
+                        aria-label={`Delete application: ${item.job_title}${item.company ? ` at ${item.company}` : ''}`}
+                        className="inline-flex shrink-0 items-center justify-center rounded-lg border border-slate-200 p-1.5 text-slate-400 transition hover:border-red-200 hover:bg-red-50 hover:text-red-600 focus:outline-none focus:ring-2 focus:ring-red-500"
+                      >
+                        <svg className="h-4 w-4" fill="none" stroke="currentColor" strokeWidth={2} viewBox="0 0 24 24" aria-hidden="true">
+                          <path strokeLinecap="round" strokeLinejoin="round" d="m14.74 9-.346 9m-4.788 0L9.26 9m9.968-3.21c.342.052.682.107 1.022.166m-1.022-.165L18.16 19.673a2.25 2.25 0 0 1-2.244 2.077H8.084a2.25 2.25 0 0 1-2.244-2.077L4.772 5.79m14.456 0a48.108 48.108 0 0 0-3.478-.397m-12 .562c.34-.059.68-.114 1.022-.165m0 0a48.11 48.11 0 0 1 3.478-.397m7.5 0v-.916c0-1.18-.91-2.164-2.09-2.201a51.964 51.964 0 0 0-3.32 0c-1.18.037-2.09 1.022-2.09 2.201v.916m7.5 0a48.667 48.667 0 0 0-7.5 0" />
+                        </svg>
+                      </button>
+                    </div>
                   </li>
                 )
               })}

@@ -69,6 +69,7 @@ export function SearchBar({ variant, autoFocus = false }: SearchBarProps) {
   const setSelectedSources = useJobSearchStore((s) => s.setSelectedSources)
   const setSelectedCompanies = useJobSearchStore((s) => s.setSelectedCompanies)
   const setActiveSavedSearchId = useJobSearchStore((s) => s.setActiveSavedSearchId)
+  const setLastSearchCached = useJobSearchStore((s) => s.setLastSearchCached)
 
   const [localQuery, setLocalQuery] = useState(criteria.query)
   const debounceRef = useRef<ReturnType<typeof setTimeout> | null>(null)
@@ -94,7 +95,7 @@ export function SearchBar({ variant, autoFocus = false }: SearchBarProps) {
   useEffect(() => { syncCriteriaToUrl(criteria) }, [criteria])
 
   const searchMutation = useMutation({
-    mutationFn: createSearch,
+    mutationFn: (criteria: Parameters<typeof createSearch>[0]) => createSearch(criteria),
     onSuccess: (data) => {
       // Ad-hoc search — not tied to a saved search, so clear any "new" badge context.
       setActiveSavedSearchId(null)
@@ -102,6 +103,7 @@ export function SearchBar({ variant, autoFocus = false }: SearchBarProps) {
       setSelectedJob(null)
       setSelectedSources([])
       setSelectedCompanies([])
+      setLastSearchCached(data.cached ?? false)
     },
   })
 

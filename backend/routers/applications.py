@@ -4,7 +4,7 @@ import json
 import uuid
 from typing import Literal
 
-from fastapi import APIRouter, Depends, HTTPException, Request
+from fastapi import APIRouter, Depends, HTTPException, Request, Response
 from pydantic import BaseModel, Field
 from sqlmodel import Session, select
 
@@ -18,6 +18,7 @@ from backend.services.application_service import (
     ApplicationError,
     InvalidStateError,
     cancel_preparing_application,
+    delete_application,
     edit_application_content,
     reject_application,
     revert_application_content,
@@ -390,5 +391,30 @@ def cancel(
         return _to_response(app)
     except InvalidStateError as exc:
         raise HTTPException(status_code=409, detail=str(exc)) from exc
+    except ApplicationError as exc:
+        raise HTTPException(status_code=404, detail=str(exc)) from exc
+
+
+@router.delete("/{app_id}", status_code=204)
+@limiter.limit("20/minute")
+def delete(
+    request: Request,
+    app_id: uuid.UUID,
+    session: Session = Depends(get_session),
+    current_user: User = Depends(get_current_user),
+):
+    """Delete an application regardless of status.
+
+    If the application is currently preparing, cooperatively cancels it first
+    so the background pipeline aborts at its next _check_cancelled() checkpoint
+    rather than overwriting the deletion with a pending transition.
+
+    AuditLog rows are deleted before the Application row to satisfy the FK
+    constraint. Returns 204 No Content on success; 404 if the application does
+    not exist or belongs to another user.
+    """
+    try:
+        delete_application(app_id, current_user.id, session)
+        return Response(status_code=204)
     except ApplicationError as exc:
         raise HTTPException(status_code=404, detail=str(exc)) from exc

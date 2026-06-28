@@ -288,6 +288,17 @@ async def prepare_application(
                 yaml_exc,
             )
 
+        # Final cancellation checkpoint — a cancel that arrived during the
+        # drafting LLM call must not be overwritten by the pending transition.
+        # _check_cancelled does session.refresh(app) so the in-memory object
+        # reflects the committed DB state before we set any new attributes.
+        _check_cancelled(app, session)
+
+        # Guard: if refresh already flipped us to cancelled (shouldn't happen
+        # given the raise above, but be defensive) skip the pending transition.
+        if app.status == ApplicationStatus.cancelled:
+            raise PrepCancelled(f"Application {app.id} cancelled by user")
+
         app.status = ApplicationStatus.pending
         app.prep_stage = ""
         app.cover_letter_text = cover_letter
@@ -416,6 +427,42 @@ def save_application(app_id: uuid.UUID, user_id: uuid.UUID, session: Session) ->
         posting.company if posting else None,
     )
     return app
+
+
+def delete_application(app_id: uuid.UUID, user_id: uuid.UUID, session: Session) -> None:
+    """Delete an application regardless of its current status.
+
+    If the application is currently ``preparing``, cooperatively cancel it
+    first (status=cancelled, prep_stage="") so the background pipeline's next
+    _check_cancelled() checkpoint aborts instead of overwriting the deletion.
+
+    AuditLog rows are deleted before the Application row to satisfy the FK
+    constraint (auditlog.application_id → application.id).  Both deletes and
+    the optional cancel-commit are executed within the same session.
+    """
+    app = _get_owned_application(app_id, user_id, session)
+
+    # Cooperatively cancel an in-flight pipeline so it doesn't resurrect the row.
+    if app.status == ApplicationStatus.preparing:
+        app.status = ApplicationStatus.cancelled
+        app.prep_stage = ""
+        session.add(app)
+        session.commit()
+        logger.info("delete_application: id=%s cancelled in-flight pipeline before delete", app_id)
+
+    # Remove FK-dependent AuditLog rows owned by the same user first.
+    audit_logs = session.exec(
+        select(AuditLog).where(
+            AuditLog.application_id == app.id,
+            AuditLog.user_id == user_id,
+        )
+    ).all()
+    for log in audit_logs:
+        session.delete(log)
+
+    session.delete(app)
+    session.commit()
+    logger.info("delete_application: id=%s deleted", app_id)
 
 
 def create_manual_application(

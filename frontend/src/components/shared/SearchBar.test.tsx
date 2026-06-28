@@ -29,7 +29,7 @@ describe('SearchBar', () => {
   })
 
   it('fires createSearch with the typed query and sets the active search', async () => {
-    mockCreateSearch.mockResolvedValue({ job_id: 'search-9', status: 'queued' })
+    mockCreateSearch.mockResolvedValue({ job_id: 'search-9', status: 'queued', cached: false })
     render(<SearchBar variant="hero" />, { wrapper })
 
     await userEvent.type(screen.getByLabelText(/job title or keywords/i), 'react engineer')

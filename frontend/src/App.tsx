@@ -75,10 +75,11 @@ function AppLayout() {
   }
 
   // Show results only when there is an active search AND the workspace was not
-  // opened from a non-results surface. If workspaceOrigin === 'home', the user
-  // came via Paste-JD or In-Progress, so we show LandingPage after they close
-  // the workspace rather than dumping them into unrelated search results.
-  const showResults = !!activeSearchJobId && workspaceOrigin !== 'home'
+  // opened from a non-results surface. If workspaceOrigin === 'home' or
+  // 'in-progress', the user came from a page that owns its own back navigation,
+  // so we show LandingPage after they close the workspace rather than dumping
+  // them into unrelated search results.
+  const showResults = !!activeSearchJobId && workspaceOrigin !== 'home' && workspaceOrigin !== 'in-progress'
 
   return (
     <div className="fixed inset-0 overflow-y-auto bg-slate-50 font-sans">

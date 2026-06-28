@@ -308,6 +308,7 @@ export function ApplicationWorkspace() {
   const activeApplicationId = useJobSearchStore((s) => s.activeApplicationId)
   const setActiveApplication = useJobSearchStore((s) => s.setActiveApplication)
   const workspaceOrigin = useJobSearchStore((s) => s.workspaceOrigin)
+  const setShowInProgressApplications = useJobSearchStore((s) => s.setShowInProgressApplications)
   const queryClient = useQueryClient()
 
   // Tab
@@ -528,9 +529,12 @@ export function ApplicationWorkspace() {
       )
       if (!confirmed) return
     }
-    // workspaceOrigin is preserved in the store — App.tsx reads it to decide
-    // whether to show LandingPage ('home') or ResultsView ('results') after
-    // activeApplicationId is cleared.
+    // When the workspace was opened from In Progress, return the user there.
+    // setShowInProgressApplications(true) is checked before the results/landing
+    // routing in App.tsx, so this reliably brings back the In Progress page.
+    if (workspaceOrigin === 'in-progress') {
+      setShowInProgressApplications(true)
+    }
     setActiveApplication(null)
   }
 
@@ -581,7 +585,13 @@ export function ApplicationWorkspace() {
       <header className="shrink-0 flex items-center gap-3 border-b border-slate-200 bg-white px-5 py-4 shadow-sm">
         <button
           onClick={handleClose}
-          aria-label={workspaceOrigin === 'home' ? 'Close workspace and return to home' : 'Close workspace and return to results'}
+          aria-label={
+            workspaceOrigin === 'in-progress'
+              ? 'Close workspace and return to in-progress'
+              : workspaceOrigin === 'home'
+                ? 'Close workspace and return to home'
+                : 'Close workspace and return to results'
+          }
           className="inline-flex items-center gap-1.5 text-[13px] font-medium text-indigo-600 transition hover:text-indigo-800 focus:outline-none focus:underline"
         >
           <svg className="h-4 w-4" viewBox="0 0 16 16" fill="currentColor" aria-hidden="true">
