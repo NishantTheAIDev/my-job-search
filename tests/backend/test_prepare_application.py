@@ -97,7 +97,9 @@ async def test_prepare_success_transitions_to_pending(session: Session, user: Us
 
 
 @pytest.mark.asyncio
-async def test_prepare_failure_transitions_to_prep_failed(session: Session, user: User, monkeypatch):
+async def test_prepare_failure_transitions_to_prep_failed(
+    session: Session, user: User, monkeypatch
+):
     posting = _seed(session, user.id)
     _patch_pipeline(monkeypatch, fail_stage="tailoring")
 
@@ -105,9 +107,7 @@ async def test_prepare_failure_transitions_to_prep_failed(session: Session, user
         await prepare_application(posting.id, user.id, session)
 
     # Exactly one row exists and it records the failure for the client to see.
-    app = session.exec(
-        select(Application).where(Application.job_posting_id == posting.id)
-    ).one()
+    app = session.exec(select(Application).where(Application.job_posting_id == posting.id)).one()
     assert app.status == ApplicationStatus.prep_failed
     assert "tailor boom" in app.prep_error
     assert app.prep_stage == ""
@@ -124,9 +124,7 @@ async def test_tailored_resume_persisted_before_drafting(session: Session, user:
     with pytest.raises(ApplicationError):
         await prepare_application(posting.id, user.id, session)
 
-    app = session.exec(
-        select(Application).where(Application.job_posting_id == posting.id)
-    ).one()
+    app = session.exec(select(Application).where(Application.job_posting_id == posting.id)).one()
     assert app.status == ApplicationStatus.prep_failed
     assert app.tailored_resume_text == "tailored resume"
     assert app.cover_letter_text == ""

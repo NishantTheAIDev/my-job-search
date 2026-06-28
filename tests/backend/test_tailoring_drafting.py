@@ -84,9 +84,7 @@ def _mock_call_claude(response_text: str):
         "backend.llm.client.get_client",
         return_value=AsyncMock(
             messages=AsyncMock(
-                create=AsyncMock(
-                    return_value=AsyncMock(content=[AsyncMock(text=response_text)])
-                )
+                create=AsyncMock(return_value=AsyncMock(content=[AsyncMock(text=response_text)]))
             )
         ),
     )
@@ -277,9 +275,7 @@ async def test_draft_cover_letter_missing_cover_letter_key_returns_empty():
 @pytest.mark.asyncio
 async def test_draft_cover_letter_backward_compat_plain_string():
     """LLM returns cover_letter as a plain string (backward compat path)."""
-    response = json.dumps(
-        {"cover_letter": "A single string cover letter.", "review_notes": ""}
-    )
+    response = json.dumps({"cover_letter": "A single string cover letter.", "review_notes": ""})
     with _mock_call_claude(response):
         text, _, paragraphs = await drafting_service.draft_cover_letter(
             SAMPLE_RESUME, SAMPLE_JD, "Role", "Company"

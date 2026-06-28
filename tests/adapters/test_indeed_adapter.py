@@ -165,7 +165,12 @@ async def test_malformed_item_skipped(httpx_mock, adapter, base_criteria):
             "title": "Ghost Job",
             "datePublished": 1714521600000,
             "description": {"html": "<p>No key.</p>"},
-            "location": {"city": "Nowhere", "admin1Code": None, "countryCode": "US", "formatted": {"long": "Nowhere"}},
+            "location": {
+                "city": "Nowhere",
+                "admin1Code": None,
+                "countryCode": "US",
+                "formatted": {"long": "Nowhere"},
+            },
             "compensation": {"baseSalary": None, "estimated": None, "currencyCode": "USD"},
             "attributes": [],
             "employer": {"name": "Ghost Corp"},
@@ -193,5 +198,3 @@ async def test_http_error_returns_empty(httpx_mock, adapter, base_criteria):
     postings = await adapter.search(base_criteria)
 
     assert postings == []
-
-

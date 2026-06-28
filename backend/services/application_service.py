@@ -32,6 +32,14 @@ class InvalidStateError(ApplicationError):
     pass
 
 
+class PrepCancelled(Exception):
+    """Raised inside prepare_application when the user has cancelled the in-flight pipeline.
+
+    Caught before the generic except-Exception handler so the row is left in
+    cancelled state rather than flipped to prep_failed.
+    """
+
+
 def _get_owned_application(app_id: uuid.UUID, user_id: uuid.UUID, session: Session) -> Application:
     """Load an application that belongs to user_id, else raise ApplicationError.
 
@@ -42,6 +50,21 @@ def _get_owned_application(app_id: uuid.UUID, user_id: uuid.UUID, session: Sessi
     if not app or app.user_id != user_id:
         raise ApplicationError(f"Application {app_id} not found")
     return app
+
+
+def _check_cancelled(app: Application, session: Session) -> None:
+    """Re-read the application's status from DB; raise PrepCancelled if cancelled.
+
+    The cancel endpoint runs in a separate request session and commits the status
+    change before this check runs. We must reload from DB explicitly — the
+    in-memory value reflects the last local commit and won't see the other
+    session's write. SQLAlchemy's session.refresh() issues a SELECT and updates
+    all attributes, so _advance's subsequent "only prep_stage is dirty" invariant
+    holds after this call.
+    """
+    session.refresh(app)
+    if app.status == ApplicationStatus.cancelled:
+        raise PrepCancelled(f"Application {app.id} cancelled by user")
 
 
 # Pipeline stage markers persisted on Application.prep_stage while status == preparing,
@@ -182,6 +205,7 @@ async def prepare_application(
                         len(fetched),
                     )
 
+        _check_cancelled(app, session)  # checkpoint before parse
         parsed_jd = await _parse_jd(posting.description)
         logger.info(
             "prepare_application: job=%s JD parsed — keys=%s",
@@ -190,6 +214,7 @@ async def prepare_application(
         )
 
         _advance(PREP_STAGE_SCORING)
+        _check_cancelled(app, session)  # checkpoint before score
         score, rationale, gaps = await scoring_service.score_resume(resume.text_content, parsed_jd)
         logger.info(
             "prepare_application: job=%s score=%d gaps=%d",
@@ -205,6 +230,7 @@ async def prepare_application(
         session.add(posting)
 
         _advance(PREP_STAGE_TAILORING)
+        _check_cancelled(app, session)  # checkpoint before tailor
         (
             tailored_text,
             change_summary,
@@ -222,6 +248,7 @@ async def prepare_application(
         # Persist the tailored resume now so it can be reviewed/downloaded while
         # the cover letter is still drafting (status stays `preparing`).
         app.tailored_resume_text = tailored_text
+        app.ai_tailored_resume_text = tailored_text  # AI draft snapshot for revert
         app.resume_diff_json = diff_json
         app.tailoring_failed = tailoring_failed
 
@@ -237,6 +264,7 @@ async def prepare_application(
             )
 
         _advance(PREP_STAGE_DRAFTING)
+        _check_cancelled(app, session)  # checkpoint before draft
 
         cover_letter, review_notes, paragraphs = await drafting_service.draft_cover_letter(
             tailored_text,
@@ -263,6 +291,7 @@ async def prepare_application(
         app.status = ApplicationStatus.pending
         app.prep_stage = ""
         app.cover_letter_text = cover_letter
+        app.ai_cover_letter_text = cover_letter  # AI draft snapshot for revert
         session.add(app)
         session.commit()
         session.refresh(app)
@@ -271,6 +300,15 @@ async def prepare_application(
             job_id,
             app.id,
             app.status,
+        )
+        return app
+
+    except PrepCancelled:
+        # The cancel endpoint already committed status=cancelled via its own session.
+        # _check_cancelled refreshed app from DB, so the in-memory state is already
+        # correct. Just log and return — do NOT flip to prep_failed or set prep_error.
+        logger.info(
+            "prepare_application: job=%s pipeline cancelled by user (app=%s)", job_id, app.id
         )
         return app
 
@@ -314,6 +352,31 @@ def reject_application(app_id: uuid.UUID, user_id: uuid.UUID, session: Session) 
         posting.title if posting else "unknown",
         posting.company if posting else None,
     )
+    return app
+
+
+def cancel_preparing_application(
+    app_id: uuid.UUID, user_id: uuid.UUID, session: Session
+) -> Application:
+    """Cooperative cancellation: transition preparing -> cancelled.
+
+    Sets status=cancelled so the background pipeline's next _check_cancelled()
+    call (which re-reads from DB) aborts cleanly before the next LLM call.
+    Only valid while status==preparing; any other status raises InvalidStateError
+    (-> 409). A cancelled application falls through the prepare dedup guard, so
+    the user can re-prepare after cancelling.
+    """
+    app = _get_owned_application(app_id, user_id, session)
+    if app.status != ApplicationStatus.preparing:
+        raise InvalidStateError(
+            f"Cannot cancel application in status '{app.status}' — must be 'preparing'"
+        )
+    app.status = ApplicationStatus.cancelled
+    app.prep_stage = ""
+    session.add(app)
+    session.commit()
+    session.refresh(app)
+    logger.info("cancel_preparing_application: id=%s → cancelled", app_id)
     return app
 
 
@@ -455,6 +518,7 @@ async def revise_application(
         baseline = _resume_diff_baseline(app, session)
         app.resume_data_yaml = rendercv_service.build_resume_yaml(new_cv, settings.rendercv_theme)
         app.tailored_resume_text = new_text
+        app.ai_tailored_resume_text = new_text  # AI draft snapshot — updated on each LLM revision
         app.resume_diff_json = compute_diff_json(baseline, new_text)
 
     elif target == "cover_letter":
@@ -505,6 +569,7 @@ async def revise_application(
             contact, new_paragraphs, settings.rendercv_theme
         )
         app.cover_letter_text = new_text
+        app.ai_cover_letter_text = new_text  # AI draft snapshot — updated on each LLM revision
 
     else:
         raise ApplicationError(f"Unknown target '{target}' — must be 'resume' or 'cover_letter'")
@@ -513,6 +578,67 @@ async def revise_application(
     session.commit()
     session.refresh(app)
     logger.info("revise_application: id=%s target=%s revised", app_id, target)
+    return app
+
+
+def revert_application_content(
+    app_id: uuid.UUID,
+    target: str,
+    to: str,
+    user_id: uuid.UUID,
+    session: Session,
+) -> Application:
+    """Revert the current resume or cover letter text to a prior baseline.
+
+    Supported combinations:
+      target=resume,        to=original   → Resume.text_content (uploaded file)
+      target=resume,        to=ai_draft   → app.ai_tailored_resume_text
+      target=cover_letter,  to=ai_draft   → app.ai_cover_letter_text
+      target=cover_letter,  to=original   → invalid (no cover-letter original exists)
+
+    Only allowed while status == pending.  Ownership violation → ApplicationError
+    (→ 404); invalid status → InvalidStateError (→ 409).
+
+    For the resume target the diff is recomputed against the original uploaded
+    resume (same baseline as the initial tailoring), matching edit_content's
+    behaviour so the "Resume Changes" view stays consistent.
+    """
+    if target == "cover_letter" and to == "original":
+        raise ApplicationError(
+            "Cannot revert cover letter to 'original' — cover letters have no uploaded original"
+        )
+
+    app = _get_owned_application(app_id, user_id, session)
+    if app.status != ApplicationStatus.pending:
+        raise InvalidStateError(
+            f"Cannot revert application in status '{app.status}' — must be 'pending'"
+        )
+
+    from backend.services.tailoring_service import compute_diff_json
+
+    if target == "resume":
+        if to == "original":
+            baseline_text = _resume_diff_baseline(app, session)
+            new_text = baseline_text
+        else:  # to == "ai_draft"
+            new_text = app.ai_tailored_resume_text
+
+        diff_baseline = _resume_diff_baseline(app, session)
+        app.tailored_resume_text = new_text
+        app.resume_diff_json = compute_diff_json(diff_baseline, new_text)
+
+    elif target == "cover_letter":
+        # Only ai_draft is valid here (original is rejected above).
+        new_text = app.ai_cover_letter_text
+        app.cover_letter_text = new_text
+
+    else:
+        raise ApplicationError(f"Unknown target '{target}' — must be 'resume' or 'cover_letter'")
+
+    session.add(app)
+    session.commit()
+    session.refresh(app)
+    logger.info("revert_application_content: id=%s target=%s to=%s reverted", app_id, target, to)
     return app
 
 

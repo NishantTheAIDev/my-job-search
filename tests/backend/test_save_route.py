@@ -58,7 +58,9 @@ def _make_resume(session: Session, user_id: uuid.UUID) -> Resume:
     return resume
 
 
-def _make_pending_app(session: Session, user_id: uuid.UUID, *, match_score: int = 80) -> Application:
+def _make_pending_app(
+    session: Session, user_id: uuid.UUID, *, match_score: int = 80
+) -> Application:
     posting = _make_posting(session, user_id)
     resume = _make_resume(session, user_id)
     app = Application(

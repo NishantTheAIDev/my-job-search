@@ -380,7 +380,9 @@ def test_status_endpoint_correct_values_after_run(client: TestClient, session: S
     assert data["total_results"] == 2  # FastAdapter returns 2 postings
 
 
-def test_status_endpoint_progress_with_failing_adapter(client: TestClient, session: Session, user: User):
+def test_status_endpoint_progress_with_failing_adapter(
+    client: TestClient, session: Session, user: User
+):
     """completed_adapters counts both succeeded and failed adapters."""
     fast = FastAdapter()
     failing = FailingAdapter()

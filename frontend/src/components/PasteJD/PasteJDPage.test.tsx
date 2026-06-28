@@ -20,7 +20,6 @@ beforeEach(() => {
   vi.clearAllMocks()
   useJobSearchStore.setState({
     showPasteJd: true,
-    showApproval: false,
     activeApplicationId: null,
     resumeUploaded: true,
     activeSearchJobId: null,
@@ -55,7 +54,7 @@ describe('PasteJDPage', () => {
     expect(submit).toBeEnabled()
   })
 
-  it('submitting calls createManualApplication and transitions to approval', async () => {
+  it('submitting calls createManualApplication and opens the workspace', async () => {
     const user = userEvent.setup()
     mockCreateManual.mockResolvedValue({ status: 'preparing', job_id: 'job-123' })
     render(<PasteJDPage />, { wrapper })
@@ -76,7 +75,6 @@ describe('PasteJDPage', () => {
     await waitFor(() => {
       const state = useJobSearchStore.getState()
       expect(state.activeApplicationId).toBe('job-123')
-      expect(state.showApproval).toBe(true)
       expect(state.showPasteJd).toBe(false)
     })
   })
@@ -109,8 +107,8 @@ describe('PasteJDPage', () => {
     await waitFor(() => {
       expect(screen.getByRole('alert')).toBeInTheDocument()
     })
-    // Stays on the paste page; does not transition to approval
-    expect(useJobSearchStore.getState().showApproval).toBe(false)
+    // Stays on the paste page; workspace not opened
+    expect(useJobSearchStore.getState().activeApplicationId).toBeNull()
   })
 
   it('back button closes the paste page', async () => {

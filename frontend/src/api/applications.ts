@@ -1,6 +1,18 @@
 import { api } from './client'
 import type { ApplicationResponse, SavedApplicationSummary } from '../types'
 
+// In-progress applications (status: preparing | pending)
+export interface InProgressApplicationItem {
+  id: string
+  job_posting_id: string
+  job_title: string
+  company: string | null
+  location: string | null
+  status: 'preparing' | 'pending'
+  match_score: number | null
+  created_at: string
+}
+
 export async function getApplication(id: string): Promise<ApplicationResponse> {
   const response = await api.get<ApplicationResponse>(`/applications/${id}`)
   return response.data
@@ -31,6 +43,16 @@ export async function listSavedApplications(): Promise<SavedApplicationSummary[]
   return response.data
 }
 
+export async function listInProgressApplications(): Promise<InProgressApplicationItem[]> {
+  const response = await api.get<InProgressApplicationItem[]>('/applications/in-progress')
+  return response.data
+}
+
+export async function cancelApplication(id: string): Promise<ApplicationResponse> {
+  const response = await api.post<ApplicationResponse>(`/applications/${id}/cancel`)
+  return response.data
+}
+
 export type ReviseTarget = 'resume' | 'cover_letter'
 
 export async function reviseApplication(
@@ -53,6 +75,20 @@ export async function editApplicationContent(
   const response = await api.put<ApplicationResponse>(`/applications/${id}/content`, {
     target,
     text,
+  })
+  return response.data
+}
+
+export type RevertTo = 'original' | 'ai_draft'
+
+export async function revertApplicationContent(
+  id: string,
+  target: ReviseTarget,
+  to: RevertTo
+): Promise<ApplicationResponse> {
+  const response = await api.post<ApplicationResponse>(`/applications/${id}/revert`, {
+    target,
+    to,
   })
   return response.data
 }

@@ -8,8 +8,8 @@ import { ErrorBanner } from '../shared/ErrorBanner'
 
 export function PasteJDPage() {
   const setShowPasteJd = useJobSearchStore((s) => s.setShowPasteJd)
-  const setShowApproval = useJobSearchStore((s) => s.setShowApproval)
   const setActiveApplication = useJobSearchStore((s) => s.setActiveApplication)
+  const setWorkspaceOrigin = useJobSearchStore((s) => s.setWorkspaceOrigin)
   const resumeUploaded = useJobSearchStore((s) => s.resumeUploaded)
   const activeSearchJobId = useJobSearchStore((s) => s.activeSearchJobId)
 
@@ -25,9 +25,11 @@ export function PasteJDPage() {
         company: company.trim() || undefined,
       }),
     onSuccess: (data) => {
+      // Mark origin as 'home' so that closing the workspace returns the user
+      // to LandingPage rather than unrelated stale search results.
+      setWorkspaceOrigin('home')
       setActiveApplication(data.job_id)
       setShowPasteJd(false)
-      setShowApproval(true)
     },
   })
 
