@@ -187,14 +187,16 @@ async def test_location_filter(httpx_mock, adapter, monkeypatch):
 
     fixture = _load_fixture()
     # Add an India job alongside the existing US/Remote ones
-    fixture["jobs"].append({
-        "id": 4004,
-        "title": "ML Engineer",
-        "location": {"name": "Bangalore, India"},
-        "content": "<p>ML role in India.</p>",
-        "absolute_url": "https://boards.greenhouse.io/acme/jobs/4004",
-        "updated_at": "2024-05-05T00:00:00.000Z",
-    })
+    fixture["jobs"].append(
+        {
+            "id": 4004,
+            "title": "ML Engineer",
+            "location": {"name": "Bangalore, India"},
+            "content": "<p>ML role in India.</p>",
+            "absolute_url": "https://boards.greenhouse.io/acme/jobs/4004",
+            "updated_at": "2024-05-05T00:00:00.000Z",
+        }
+    )
 
     httpx_mock.add_response(url=_GREENHOUSE_URL_RE, json=fixture)
 

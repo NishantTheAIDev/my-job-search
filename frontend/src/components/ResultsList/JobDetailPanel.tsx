@@ -78,6 +78,7 @@ interface JobDetailPanelProps {
 
 export function JobDetailPanel({ job, onClose }: JobDetailPanelProps) {
   const setActiveApplication = useJobSearchStore((s) => s.setActiveApplication)
+  const setWorkspaceOrigin = useJobSearchStore((s) => s.setWorkspaceOrigin)
   const queryClient = useQueryClient()
   const [prepareError, setPrepareError] = useState<string | null>(null)
 
@@ -85,6 +86,7 @@ export function JobDetailPanel({ job, onClose }: JobDetailPanelProps) {
     mutationFn: () => prepareApplication(job.id),
     onSuccess: (data) => {
       queryClient.invalidateQueries({ queryKey: ['applications'] })
+      setWorkspaceOrigin('results')
       setActiveApplication(data.job_id)
       // Close this detail slide-over (z-50) so the ResumeEditor (z-40) hosting
       // the prep pipeline and approve/reject controls becomes visible.

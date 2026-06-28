@@ -72,7 +72,11 @@ def _patch_pipeline_with_gaps(monkeypatch, gaps: list[str]) -> None:
         )
 
     async def fake_draft(text, parsed, title, company):
-        return ("Dear Hiring Manager,\n\nI am excited…", "", ["Dear Hiring Manager,\n\nI am excited…"])
+        return (
+            "Dear Hiring Manager,\n\nI am excited…",
+            "",
+            ["Dear Hiring Manager,\n\nI am excited…"],
+        )
 
     monkeypatch.setattr(application_service, "_parse_jd", fake_parse_jd)
     monkeypatch.setattr(scoring_service, "score_resume", fake_score)

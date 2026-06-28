@@ -19,6 +19,10 @@ class ApplicationStatus(StrEnum):
     # Terminal status reached only via save_application(). Represents "keep this tailored
     # result for reference" without submitting to any board.
     saved = "saved"
+    # Set by cancel_preparing_application(); signals the background pipeline's cooperative
+    # checkpoints to abort before the next LLM call. Falls through the prepare dedup guard
+    # (only preparing/pending are reused) so the user can re-prepare after cancelling.
+    cancelled = "cancelled"
 
 
 class Application(SQLModel, table=True):
@@ -30,8 +34,10 @@ class Application(SQLModel, table=True):
     prep_stage: str = ""  # current pipeline stage while status == preparing (e.g. "tailoring")
     prep_error: str = ""  # populated when status == prep_failed
     tailored_resume_text: str = ""
+    ai_tailored_resume_text: str = ""
     resume_diff_json: str = "[]"
     cover_letter_text: str = ""
+    ai_cover_letter_text: str = ""
     resume_data_yaml: str = ""
     cover_letter_data_yaml: str = ""
     match_score: int = 0

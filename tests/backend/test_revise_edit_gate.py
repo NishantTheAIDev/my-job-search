@@ -164,9 +164,7 @@ def _patch_llm(response_text: str):
         "backend.llm.client.get_client",
         return_value=AsyncMock(
             messages=AsyncMock(
-                create=AsyncMock(
-                    return_value=AsyncMock(content=[AsyncMock(text=response_text)])
-                )
+                create=AsyncMock(return_value=AsyncMock(content=[AsyncMock(text=response_text)]))
             )
         ),
     )

@@ -251,7 +251,9 @@ def test_diff_endpoint_rejects_incomplete_run(client: TestClient, session: Sessi
     assert resp.status_code == 409
 
 
-def test_diff_endpoint_missing_search_job_returns_404(client: TestClient, session: Session, user: User):
+def test_diff_endpoint_missing_search_job_returns_404(
+    client: TestClient, session: Session, user: User
+):
     saved = _make_saved(session, user.id)
     resp = client.post(f"/saved-searches/{saved.id}/diff?search_job_id={uuid.uuid4()}")
     assert resp.status_code == 404

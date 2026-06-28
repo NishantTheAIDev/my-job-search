@@ -10,6 +10,7 @@ from backend.auth.dependencies import get_current_user
 from backend.background.tasks import prepare_application_task
 from backend.database import get_session
 from backend.limiter import limiter
+from backend.models.application import Application, ApplicationStatus
 from backend.models.job_posting import JobPosting, RemoteStatus
 from backend.models.resume import Resume
 from backend.models.user import User
@@ -207,6 +208,32 @@ async def prepare_application(
     ).first()
     if not resume:
         raise HTTPException(status_code=400, detail="No active resume — upload a resume first")
+
+    # Idempotency: if an application for this job is already in flight (preparing)
+    # or awaiting the user's review (pending), reuse it instead of queueing a
+    # second concurrent pipeline. Without this, re-clicking "Prepare" after going
+    # back spawns a duplicate background task (and a second Application row) for
+    # the same job. Terminal/failed states (saved, rejected, prep_failed) fall
+    # through so the user can deliberately re-prepare.
+    existing = session.exec(
+        select(Application)
+        .where(
+            Application.user_id == current_user.id,
+            Application.job_posting_id == job_id,
+            Application.status.in_(  # type: ignore[attr-defined]
+                [ApplicationStatus.preparing, ApplicationStatus.pending]
+            ),
+        )
+        .order_by(Application.created_at.desc())
+    ).first()
+    if existing:
+        logger.info(
+            "prepare reuse: job_id=%s existing app=%s status=%s",
+            job_id,
+            existing.id,
+            existing.status,
+        )
+        return {"status": existing.status, "job_id": str(job_id)}
 
     background_tasks.add_task(prepare_application_task, job_id, current_user.id)
     logger.info("prepare queued: job_id=%s title=%r", job_id, posting.title)

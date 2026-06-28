@@ -19,7 +19,7 @@ def _user_or_ip_key(request: Request) -> str:
     if auth.startswith("Bearer "):
         try:
             return f"user:{decode_access_token(auth[7:])}"
-        except (jwt.PyJWTError, ValueError, KeyError):
+        except jwt.PyJWTError, ValueError, KeyError:
             pass
     return get_remote_address(request)
 

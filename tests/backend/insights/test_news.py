@@ -72,9 +72,14 @@ async def test_region_uses_locale_params(httpx_mock):
 
 async def test_falls_back_to_hn_when_google_empty(httpx_mock):
     httpx_mock.add_response(url=_GOOGLE_RE, text=_EMPTY_RSS)
-    httpx_mock.add_response(url=_HN_RE, json={"hits": [
-        {"title": "HN story", "url": "https://example.com/a", "created_at_i": 1781000000},
-    ]})
+    httpx_mock.add_response(
+        url=_HN_RE,
+        json={
+            "hits": [
+                {"title": "HN story", "url": "https://example.com/a", "created_at_i": 1781000000},
+            ]
+        },
+    )
 
     news = await get_news("us")
     assert len(news) == 1
