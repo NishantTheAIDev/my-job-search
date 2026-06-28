@@ -410,6 +410,16 @@ def _patch_pipeline(monkeypatch, *, cancel_after: str | None = None, session_ref
 
     async def fake_draft(text, parsed, title, company):
         calls["draft"] += 1
+        if cancel_after == "drafting" and session_ref is not None:
+            # Simulate the cancel endpoint committing cancelled status while the
+            # final drafting LLM call is in flight — mirrors the "parsing" branch.
+            app = session_ref.exec(
+                select(Application).where(Application.status == ApplicationStatus.preparing)
+            ).first()
+            if app:
+                app.status = ApplicationStatus.cancelled
+                session_ref.add(app)
+                session_ref.commit()
         return ("Dear Hiring Manager", "", ["Dear Hiring Manager"])
 
     monkeypatch.setattr(application_service, "_parse_jd", fake_parse_jd)
@@ -465,3 +475,41 @@ async def test_cooperative_cancellation_does_not_set_prep_failed(
     session.refresh(result)
     assert result.status == ApplicationStatus.cancelled
     assert result.status != ApplicationStatus.prep_failed
+
+
+@pytest.mark.asyncio
+async def test_cooperative_cancellation_during_drafting_does_not_flip_to_pending(
+    session: Session, user: User, monkeypatch
+):
+    """Regression: a cancel that arrives DURING the final draft_cover_letter call must
+    not be overwritten by the pending transition that follows it.
+
+    Before the fix, prepare_application unconditionally set app.status = pending after
+    drafting completed, silently ignoring any cancel committed concurrently during that
+    LLM call. The fix added a _check_cancelled() checkpoint immediately before the
+    status = pending block so the cancel is honoured and the row stays cancelled.
+
+    All four pipeline stages must still run (the cancel is only detected after drafting
+    returns), and the result must NOT be a prep_failed row — a cancel is a clean exit.
+    """
+    posting = _seed_for_prepare(session, user.id)
+    calls = _patch_pipeline(monkeypatch, cancel_after="drafting", session_ref=session)
+
+    result = await prepare_application(posting.id, user.id, session)
+
+    # Core regression assertion: status must be cancelled, NOT pending.
+    session.refresh(result)
+    assert result.status == ApplicationStatus.cancelled, (
+        f"Expected cancelled but got {result.status!r} — "
+        "the post-draft pending transition overwrote the concurrent cancel"
+    )
+    assert result.status != ApplicationStatus.pending
+
+    # A cancellation is not a failure — prep_error must remain empty.
+    assert result.prep_error == ""
+
+    # All four stages ran; the cancel only fires inside fake_draft (the last stage).
+    assert calls["parse"] == 1
+    assert calls["score"] == 1
+    assert calls["tailor"] == 1
+    assert calls["draft"] == 1

@@ -1,6 +1,6 @@
 import { useEffect, useMemo, useRef, useState } from 'react'
-import { useQuery } from '@tanstack/react-query'
-import { getSearchStatus } from '../../api/search'
+import { useMutation, useQuery } from '@tanstack/react-query'
+import { createSearch, getSearchStatus } from '../../api/search'
 import { listJobs } from '../../api/jobs'
 import { diffSavedSearch } from '../../api/savedSearches'
 import { useJobSearchStore } from '../../store/useJobSearchStore'
@@ -37,15 +37,23 @@ export function ResultsList() {
   const selectedJob = useJobSearchStore((s) => s.selectedJob)
   const setSelectedJob = useJobSearchStore((s) => s.setSelectedJob)
   const activeSavedSearchId = useJobSearchStore((s) => s.activeSavedSearchId)
+  const setActiveSavedSearchId = useJobSearchStore((s) => s.setActiveSavedSearchId)
+  const setActiveSearchJob = useJobSearchStore((s) => s.setActiveSearchJob)
+  const setSelectedSources = useJobSearchStore((s) => s.setSelectedSources)
+  const setSelectedCompanies = useJobSearchStore((s) => s.setSelectedCompanies)
+  const lastSearchCached = useJobSearchStore((s) => s.lastSearchCached)
+  const setLastSearchCached = useJobSearchStore((s) => s.setLastSearchCached)
   const page = criteria.page ?? 1
 
   // Local ephemeral state — mirrors how source/company filters are handled.
   // Reset when the active search changes so a new search starts filtered.
   const [showLowRelevance, setShowLowRelevance] = useState(false)
+  const [showNewOnly, setShowNewOnly] = useState(false)
 
   useEffect(() => {
     setSelectedJob(null)
     setShowLowRelevance(false)
+    setShowNewOnly(false)
   }, [activeSearchJobId, setSelectedJob])
 
   useEffect(() => {
@@ -97,6 +105,21 @@ export function ResultsList() {
     () => new Set(diffQuery.data?.new_posting_ids ?? []),
     [diffQuery.data],
   )
+
+  // Re-search: forces a fresh scrape bypassing same-day cache. Mirrors
+  // SearchBar's searchMutation — once setActiveSearchJob fires, the existing
+  // statusQuery polling automatically kicks in for the new job id.
+  const reSearchMutation = useMutation({
+    mutationFn: () => createSearch({ ...criteria, page: 1 }, true),
+    onSuccess: (data) => {
+      setActiveSavedSearchId(null)
+      setActiveSearchJob(data.job_id)
+      setSelectedJob(null)
+      setSelectedSources([])
+      setSelectedCompanies([])
+      setLastSearchCached(data.cached ?? false)
+    },
+  })
 
   const liveRef = useRef<HTMLParagraphElement>(null)
   useEffect(() => {
@@ -163,6 +186,9 @@ export function ResultsList() {
       })
     : []
 
+  // "New only" filter — applied after sorting so relevance order is preserved
+  const displayedJobs = showNewOnly ? sortedJobs.filter((j) => newIds.has(j.id)) : sortedJobs
+
   const total = jobsQuery.data?.total ?? 0
   const totalPages = jobsQuery.data ? Math.ceil(total / PAGE_SIZE) : 0
 
@@ -203,7 +229,51 @@ export function ResultsList() {
             )}
           </div>
           <div className="flex items-center gap-3">
+            {/* Re-search: force a fresh scrape bypassing the same-day cache */}
+            <button
+              type="button"
+              onClick={() => reSearchMutation.mutate()}
+              disabled={reSearchMutation.isPending || isSearchRunning}
+              aria-busy={reSearchMutation.isPending}
+              aria-label="Re-run this search, bypassing cached results"
+              className="inline-flex shrink-0 items-center gap-1 rounded-lg border border-slate-200 px-2.5 py-1 text-[11px] font-medium text-slate-500 transition hover:border-slate-300 hover:bg-slate-50 focus:outline-none focus:ring-2 focus:ring-indigo-500 focus:ring-offset-1 disabled:cursor-not-allowed disabled:opacity-40"
+            >
+              <svg className="h-3 w-3" fill="none" stroke="currentColor" strokeWidth={2} viewBox="0 0 24 24" aria-hidden="true">
+                <path strokeLinecap="round" strokeLinejoin="round" d="M16.023 9.348h4.992v-.001M2.985 19.644v-4.992m0 0h4.992m-4.993 0 3.181 3.183a8.25 8.25 0 0 0 13.803-3.7M4.031 9.865a8.25 8.25 0 0 1 13.803-3.7l3.181 3.182m0-4.991v4.99" />
+              </svg>
+              {reSearchMutation.isPending ? 'Searching…' : 'Re-search'}
+            </button>
             <SaveSearchButton />
+            {/* "New only" toggle — only shown for saved-search runs with new results */}
+            {activeSavedSearchId && isSearchComplete && newIds.size > 0 && (
+              <label className="flex cursor-pointer items-center gap-1.5 select-none">
+                <div
+                  role="checkbox"
+                  aria-checked={showNewOnly}
+                  tabIndex={0}
+                  onClick={() => setShowNewOnly((v) => !v)}
+                  onKeyDown={(e) => {
+                    if (e.key === 'Enter' || e.key === ' ') {
+                      e.preventDefault()
+                      setShowNewOnly((v) => !v)
+                    }
+                  }}
+                  className={`flex h-4 w-4 shrink-0 items-center justify-center rounded border transition focus:outline-none focus:ring-2 focus:ring-indigo-500 focus:ring-offset-1 ${
+                    showNewOnly
+                      ? 'border-indigo-500 bg-indigo-500 text-white'
+                      : 'border-slate-300 bg-white'
+                  }`}
+                  aria-label="Show new results only"
+                >
+                  {showNewOnly && (
+                    <svg className="h-2.5 w-2.5" viewBox="0 0 10 10" fill="none" stroke="currentColor" strokeWidth={2.5} aria-hidden="true">
+                      <path strokeLinecap="round" strokeLinejoin="round" d="M1.5 5l2.5 2.5 5-5" />
+                    </svg>
+                  )}
+                </div>
+                <span className="text-[11px] text-slate-500">New only</span>
+              </label>
+            )}
             <label className="flex cursor-pointer items-center gap-1.5 select-none">
               <div
                 role="checkbox"
@@ -239,6 +309,13 @@ export function ResultsList() {
           </div>
         </div>
 
+        {/* Cached notice — shown when results were served from same-day cache */}
+        {lastSearchCached && isSearchComplete && (
+          <p className="mt-1 text-[11px] text-slate-400 italic">
+            Showing saved results from earlier today
+          </p>
+        )}
+
         {/* Inline progress indicator — visible while the search is still running */}
         {isSearchRunning && statusQuery.data && statusQuery.data.total_adapters > 0 && (
           <p
@@ -253,7 +330,7 @@ export function ResultsList() {
 
       {/* Job list */}
       <ul className="flex flex-col gap-0 divide-y divide-slate-50" role="list" aria-label="Job listings">
-        {sortedJobs.map((job) => (
+        {displayedJobs.map((job) => (
           <li key={job.id} className="px-3 py-2.5">
             <JobCard
               job={job}

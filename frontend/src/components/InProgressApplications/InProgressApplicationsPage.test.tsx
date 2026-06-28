@@ -208,7 +208,7 @@ describe('InProgressApplicationsPage', () => {
         })
       )
 
-      expect(useJobSearchStore.getState().workspaceOrigin).toBe('home')
+      expect(useJobSearchStore.getState().workspaceOrigin).toBe('in-progress')
     })
 
     it('clicking a row calls setShowInProgressApplications(false)', async () => {

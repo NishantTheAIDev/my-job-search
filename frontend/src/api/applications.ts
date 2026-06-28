@@ -53,6 +53,10 @@ export async function cancelApplication(id: string): Promise<ApplicationResponse
   return response.data
 }
 
+export async function deleteApplication(id: string): Promise<void> {
+  await api.delete(`/applications/${id}`)
+}
+
 export type ReviseTarget = 'resume' | 'cover_letter'
 
 export async function reviseApplication(

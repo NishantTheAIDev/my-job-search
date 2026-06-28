@@ -3,7 +3,7 @@ import type { SearchCriteria, JobPosting } from '../types'
 
 // Where the ApplicationWorkspace was opened from.
 // Used by handleClose to decide where to return the user.
-export type WorkspaceOrigin = 'results' | 'home' | null
+export type WorkspaceOrigin = 'results' | 'home' | 'in-progress' | null
 
 interface JobSearchState {
   criteria: SearchCriteria
@@ -24,6 +24,8 @@ interface JobSearchState {
   // Tracks what surface opened the ApplicationWorkspace so handleClose
   // can navigate back to the right place.
   workspaceOrigin: WorkspaceOrigin
+  // Whether the last createSearch response was served from cache.
+  lastSearchCached: boolean
   setCriteria: (c: Partial<SearchCriteria>) => void
   setActiveSearchJob: (id: string | null) => void
   setSelectedJob: (job: JobPosting | null) => void
@@ -38,6 +40,7 @@ interface JobSearchState {
   setShowInProgressApplications: (v: boolean) => void
   setActiveSavedSearchId: (id: string | null) => void
   setWorkspaceOrigin: (origin: WorkspaceOrigin) => void
+  setLastSearchCached: (v: boolean) => void
   resetToLanding: () => void
 }
 
@@ -56,6 +59,7 @@ export const useJobSearchStore = create<JobSearchState>((set) => ({
   showInProgressApplications: false,
   activeSavedSearchId: null,
   workspaceOrigin: null,
+  lastSearchCached: false,
   setCriteria: (c) => set((s) => ({ criteria: { ...s.criteria, ...c } })),
   // Clearing workspaceOrigin here ensures that once the user starts a new
   // search, App.tsx switches back to showing ResultsView rather than
@@ -73,6 +77,7 @@ export const useJobSearchStore = create<JobSearchState>((set) => ({
   setShowInProgressApplications: (v) => set({ showInProgressApplications: v }),
   setActiveSavedSearchId: (id) => set({ activeSavedSearchId: id }),
   setWorkspaceOrigin: (origin) => set({ workspaceOrigin: origin }),
+  setLastSearchCached: (v) => set({ lastSearchCached: v }),
   resetToLanding: () =>
     set({
       activeSearchJobId: null,

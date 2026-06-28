@@ -23,3 +23,7 @@ class SearchJob(SQLModel, table=True):
     error: str | None = None
     created_at: datetime = Field(default_factory=lambda: datetime.now(UTC))
     completed_at: datetime | None = None
+    # SHA-256 hex digest of the normalized search criteria; used to detect
+    # same-day duplicate searches and return cached results without re-hitting
+    # adapter APIs.  Empty string on rows created before this column existed.
+    criteria_fingerprint: str = Field(default="", index=True)
