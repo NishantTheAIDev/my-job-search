@@ -58,6 +58,8 @@ migrate-down: ## Roll back the most recent migration
 # --- Run --------------------------------------------------------------------
 
 start: db-up ## Start backend (:8000) AND frontend (:5173) together; Ctrl-C stops both
+	@echo "Freeing ports 8000 (backend) and 5173 (frontend) from any leftover processes…"
+	@pids=$$(lsof -ti tcp:8000 -ti tcp:5173); [ -n "$$pids" ] && kill -9 $$pids 2>/dev/null; true
 	@echo "Starting backend (:8000) and frontend (:5173) — press Ctrl-C to stop both."
 	@trap 'kill 0' EXIT INT TERM; \
 	uv run main.py & \
