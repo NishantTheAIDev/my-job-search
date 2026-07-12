@@ -36,7 +36,7 @@ def get_current_user(
         raise _CREDENTIALS_ERROR
     try:
         user_id = decode_access_token(credentials.credentials)
-    except (jwt.PyJWTError, ValueError, KeyError):
+    except jwt.PyJWTError, ValueError, KeyError:
         raise _CREDENTIALS_ERROR from None
 
     user = session.get(User, user_id)

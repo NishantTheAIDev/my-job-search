@@ -1,6 +1,10 @@
 import { create } from 'zustand'
 import type { SearchCriteria, JobPosting } from '../types'
 
+// Where the ApplicationWorkspace was opened from.
+// Used by handleClose to decide where to return the user.
+export type WorkspaceOrigin = 'results' | 'home' | 'in-progress' | null
+
 interface JobSearchState {
   criteria: SearchCriteria
   activeSearchJobId: string | null
@@ -9,14 +13,19 @@ interface JobSearchState {
   selectedCompanies: string[]
   activeApplicationId: string | null
   resumeUploaded: boolean
-  showApproval: boolean
   showInsights: boolean
   showPasteJd: boolean
   showSavedApplications: boolean
   showSavedSearches: boolean
+  showInProgressApplications: boolean
   // The saved search whose re-run is currently active (drives the "new" badge).
   // null for ad-hoc searches that didn't originate from a saved search.
   activeSavedSearchId: string | null
+  // Tracks what surface opened the ApplicationWorkspace so handleClose
+  // can navigate back to the right place.
+  workspaceOrigin: WorkspaceOrigin
+  // Whether the last createSearch response was served from cache.
+  lastSearchCached: boolean
   setCriteria: (c: Partial<SearchCriteria>) => void
   setActiveSearchJob: (id: string | null) => void
   setSelectedJob: (job: JobPosting | null) => void
@@ -24,12 +33,14 @@ interface JobSearchState {
   setSelectedCompanies: (companies: string[]) => void
   setActiveApplication: (id: string | null) => void
   setResumeUploaded: (v: boolean) => void
-  setShowApproval: (v: boolean) => void
   setShowInsights: (v: boolean) => void
   setShowPasteJd: (v: boolean) => void
   setShowSavedApplications: (v: boolean) => void
   setShowSavedSearches: (v: boolean) => void
+  setShowInProgressApplications: (v: boolean) => void
   setActiveSavedSearchId: (id: string | null) => void
+  setWorkspaceOrigin: (origin: WorkspaceOrigin) => void
+  setLastSearchCached: (v: boolean) => void
   resetToLanding: () => void
 }
 
@@ -41,25 +52,32 @@ export const useJobSearchStore = create<JobSearchState>((set) => ({
   selectedCompanies: [],
   activeApplicationId: null,
   resumeUploaded: false,
-  showApproval: false,
   showInsights: false,
   showPasteJd: false,
   showSavedApplications: false,
   showSavedSearches: false,
+  showInProgressApplications: false,
   activeSavedSearchId: null,
+  workspaceOrigin: null,
+  lastSearchCached: false,
   setCriteria: (c) => set((s) => ({ criteria: { ...s.criteria, ...c } })),
-  setActiveSearchJob: (id) => set({ activeSearchJobId: id }),
+  // Clearing workspaceOrigin here ensures that once the user starts a new
+  // search, App.tsx switches back to showing ResultsView rather than
+  // holding the post-home-origin LandingPage.
+  setActiveSearchJob: (id) => set({ activeSearchJobId: id, workspaceOrigin: null }),
   setSelectedJob: (job) => set({ selectedJob: job }),
   setSelectedSources: (sources) => set({ selectedSources: sources }),
   setSelectedCompanies: (companies) => set({ selectedCompanies: companies }),
   setActiveApplication: (id) => set({ activeApplicationId: id }),
   setResumeUploaded: (v) => set({ resumeUploaded: v }),
-  setShowApproval: (v) => set({ showApproval: v }),
   setShowInsights: (v) => set({ showInsights: v }),
   setShowPasteJd: (v) => set({ showPasteJd: v }),
   setShowSavedApplications: (v) => set({ showSavedApplications: v }),
   setShowSavedSearches: (v) => set({ showSavedSearches: v }),
+  setShowInProgressApplications: (v) => set({ showInProgressApplications: v }),
   setActiveSavedSearchId: (id) => set({ activeSavedSearchId: id }),
+  setWorkspaceOrigin: (origin) => set({ workspaceOrigin: origin }),
+  setLastSearchCached: (v) => set({ lastSearchCached: v }),
   resetToLanding: () =>
     set({
       activeSearchJobId: null,
@@ -67,12 +85,13 @@ export const useJobSearchStore = create<JobSearchState>((set) => ({
       selectedSources: [],
       selectedCompanies: [],
       activeApplicationId: null,
-      showApproval: false,
       showInsights: false,
       showPasteJd: false,
       showSavedApplications: false,
       showSavedSearches: false,
+      showInProgressApplications: false,
       activeSavedSearchId: null,
+      workspaceOrigin: null,
       criteria: { query: '', remote_only: false, page: 1 },
     }),
 }))

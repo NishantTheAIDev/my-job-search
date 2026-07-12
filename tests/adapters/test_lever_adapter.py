@@ -202,15 +202,17 @@ async def test_location_filter(httpx_mock, adapter, monkeypatch):
     monkeypatch.setattr(settings, "lever_companies", "acme")
 
     fixture = _load_fixture()
-    fixture.append({
-        "id": "abc-444",
-        "text": "Backend Engineer",
-        "categories": {"location": "Bangalore, India"},
-        "descriptionPlain": "Backend role based in India.",
-        "hostedUrl": "https://jobs.lever.co/acme/abc-444",
-        "createdAt": 1714694400000,
-        "workplaceType": "onsite",
-    })
+    fixture.append(
+        {
+            "id": "abc-444",
+            "text": "Backend Engineer",
+            "categories": {"location": "Bangalore, India"},
+            "descriptionPlain": "Backend role based in India.",
+            "hostedUrl": "https://jobs.lever.co/acme/abc-444",
+            "createdAt": 1714694400000,
+            "workplaceType": "onsite",
+        }
+    )
 
     httpx_mock.add_response(url=_LEVER_URL_RE, json=fixture)
 

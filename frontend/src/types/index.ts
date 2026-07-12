@@ -63,6 +63,7 @@ export type ApplicationStatus =
   | 'submitted'
   | 'failed'
   | 'saved'
+  | 'cancelled'
 
 // Pipeline stage reported on prep_stage while status === 'preparing'.
 export type PrepStage = '' | 'parsing' | 'scoring' | 'tailoring' | 'drafting'
@@ -76,8 +77,10 @@ export interface ApplicationResponse {
   match_score: number
   match_rationale: string
   tailored_resume_text: string
+  ai_tailored_resume_text: string
   resume_diff_json: string // JSON string: DiffHunk[]
   cover_letter_text: string
+  ai_cover_letter_text: string
   tailoring_failed: boolean
   resume_data_yaml: string
   cover_letter_data_yaml: string

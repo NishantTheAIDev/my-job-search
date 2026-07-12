@@ -1,6 +1,8 @@
 """Fan-out search across all board adapters, dedup, and persist results."""
 
 import asyncio
+import hashlib
+import json
 import logging
 import uuid
 from datetime import UTC, datetime
@@ -13,6 +15,32 @@ from backend.models.search_job import SearchJob, SearchJobStatus
 from backend.services.relevance import score_relevance
 
 logger = logging.getLogger(__name__)
+
+
+def compute_criteria_fingerprint(criteria: SearchCriteria) -> str:
+    """Return a stable SHA-256 hex digest of the normalised search criteria.
+
+    All fields that affect search results are included.  Normalisation rules:
+      - query: strip whitespace + lowercase
+      - location: strip whitespace + lowercase, or None when absent/blank
+      - booleans / ints / None values are included as-is
+      - keys are sorted so dict ordering never affects the digest
+
+    The resulting fingerprint is stored on SearchJob so same-day duplicate
+    searches can be detected and served from the DB without re-hitting adapter
+    APIs.
+    """
+    normalised = {
+        "query": (criteria.query or "").strip().lower(),
+        "location": (criteria.location.strip().lower() if criteria.location else None),
+        "remote_only": criteria.remote_only,
+        "employment_type": criteria.employment_type,
+        "seniority": criteria.seniority,
+        "posted_within_days": criteria.posted_within_days,
+        "page": criteria.page,
+    }
+    canonical = json.dumps(normalised, sort_keys=True, separators=(",", ":"))
+    return hashlib.sha256(canonical.encode()).hexdigest()
 
 
 def _deduplicate(postings: list[JobPosting]) -> list[JobPosting]:

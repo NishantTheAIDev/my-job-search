@@ -67,6 +67,7 @@ function SalaryIcon() {
 
 export function JobCard({ job, onShowDetail, isSelected = false, isNew = false }: JobCardProps) {
   const setActiveApplication = useJobSearchStore((s) => s.setActiveApplication)
+  const setWorkspaceOrigin = useJobSearchStore((s) => s.setWorkspaceOrigin)
   const queryClient = useQueryClient()
   const [prepareError, setPrepareError] = useState<string | null>(null)
 
@@ -74,6 +75,7 @@ export function JobCard({ job, onShowDetail, isSelected = false, isNew = false }
     mutationFn: () => prepareApplication(job.id),
     onSuccess: (data) => {
       queryClient.invalidateQueries({ queryKey: ['applications'] })
+      setWorkspaceOrigin('results')
       setActiveApplication(data.job_id)
     },
     onError: (err) => {

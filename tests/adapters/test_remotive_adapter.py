@@ -47,7 +47,9 @@ async def test_search_returns_normalized_postings(httpx_mock, adapter, base_crit
     by_id = {p.source_job_id: p for p in postings}
     assert by_id["6001"].title == "Senior AI Engineer"
     assert by_id["6001"].company == "TechCorp"
-    assert by_id["6001"].url == "https://remotive.com/remote-jobs/software-dev/senior-ai-engineer-6001"
+    assert (
+        by_id["6001"].url == "https://remotive.com/remote-jobs/software-dev/senior-ai-engineer-6001"
+    )
     assert by_id["6001"].posted_date == "2024-05-01"
     assert by_id["6001"].location == "Worldwide"
 

@@ -10,6 +10,7 @@ class Settings(BaseSettings):
     adzuna_app_key: SecretStr = SecretStr("")
     greenhouse_companies: str = ""
     lever_companies: str = ""
+    ashby_companies: str = ""
     themuse_api_key: str = ""  # optional — raises rate limits but not required
     jsearch_api_key: SecretStr = SecretStr("")
     indeed_api_key: SecretStr = SecretStr("")
@@ -28,6 +29,7 @@ class Settings(BaseSettings):
     # Comma-separated list of allowed CORS origins
     cors_origins: list[str] = ["http://localhost:5173"]
     rendercv_theme: str = "engineeringresumes"
+    ycombinator_enabled: bool = True  # YC jobs landing-page feed; keyless, no auth
     worldbank_enabled: bool = True
     news_enabled: bool = True  # Google News RSS (+ Hacker News fallback); both keyless
     insights_cache_ttl_hours: int = 24
