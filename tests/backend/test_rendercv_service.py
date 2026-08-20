@@ -216,6 +216,13 @@ class TestBuildResumeYaml:
             doc = yaml.safe_load(yaml_str)
             assert doc["design"]["theme"] == theme
 
+    def test_design_forces_e164_phone_format(self):
+        # rendercv defaults phone_number_format to "national", which renders an
+        # Indian number as "08883337771" (country code dropped). We must force E.164.
+        yaml_str = build_resume_yaml(SAMPLE_CV, "classic")
+        doc = yaml.safe_load(yaml_str)
+        assert doc["design"]["header"]["connections"]["phone_number_format"] == "E164"
+
 
 # ---------------------------------------------------------------------------
 # build_cover_letter_yaml
@@ -266,6 +273,11 @@ class TestBuildCoverLetterYaml:
         yaml_str = build_cover_letter_yaml({"name": "X"}, ["P."], "sb2nov")
         doc = yaml.safe_load(yaml_str)
         assert doc["design"]["theme"] == "sb2nov"
+
+    def test_design_forces_e164_phone_format(self):
+        yaml_str = build_cover_letter_yaml({"name": "X"}, ["P."], "classic")
+        doc = yaml.safe_load(yaml_str)
+        assert doc["design"]["header"]["connections"]["phone_number_format"] == "E164"
 
     def test_social_networks_copied(self):
         contact = {
@@ -800,3 +812,61 @@ def test_render_pdf_education_year_only_end_date_no_jan():
             )
             # "2011" should appear somewhere (the trailing space is trimmed by Typst)
             assert "2011" in typ_text
+
+
+@pytest.mark.slow
+def test_render_pdf_phone_keeps_country_code():
+    """End-to-end: an Indian phone must render with its +91 country code in the
+    generated Typst source, NOT as a national-format leading-zero number.
+
+    RenderCV re-formats cv.phone per design.header.connections.phone_number_format,
+    which defaults to "national" (renders +918883337771 as "088833 37771"). We
+    force "E164", so the country code must be preserved.
+    """
+    import subprocess
+    import sys
+    import tempfile
+    from pathlib import Path
+
+    cv = {
+        "name": "Test Candidate Phone",
+        "phone": "+918883337771",
+        "sections": {"Summary": ["Engineer."]},
+    }
+    yaml_str = build_resume_yaml(cv, "engineeringresumes")
+
+    with tempfile.TemporaryDirectory() as tmpdir:
+        tmp_path = Path(tmpdir) / "input.yaml"
+        tmp_path.write_text(yaml_str, encoding="utf-8")
+        outdir = Path(tmpdir) / "out"
+        outdir.mkdir()
+
+        cmd = [
+            sys.executable,
+            "-m",
+            "rendercv",
+            "render",
+            str(tmp_path),
+            "-o",
+            str(outdir),
+            "-nomd",
+            "-nohtml",
+            "-nopng",
+        ]
+        result = subprocess.run(cmd, capture_output=True, timeout=120)
+        assert result.returncode == 0, result.stderr.decode(errors="replace")
+
+        pdf_files = list(outdir.glob("*.pdf"))
+        assert pdf_files, "No PDF produced"
+        pdf_bytes = pdf_files[0].read_bytes()
+        assert pdf_bytes[:4] == b"%PDF"
+
+        typ_files = list(outdir.glob("**/*.typ"))
+        if typ_files:
+            typ_text = typ_files[0].read_text(encoding="utf-8")
+            assert "+918883337771" in typ_text, (
+                "RenderCV dropped the country code: phone not rendered as +918883337771"
+            )
+            assert "088833" not in typ_text, (
+                "RenderCV used national format: found leading-zero phone in Typst source"
+            )

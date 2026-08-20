@@ -12,6 +12,7 @@ Instructions:
 3. Front-load the most relevant experience; trim or compress what is irrelevant.
 4. Tailor the headline to the target title and top 2-3 requirements.
 5. Preserve every date exactly as found in the original resume — never alter, estimate, or invent dates.
+6. Highlight key projects and achievements that match the JD's requirements, even if they are buried in the original resume.
 
 Return ONLY a JSON object with this exact shape:
 

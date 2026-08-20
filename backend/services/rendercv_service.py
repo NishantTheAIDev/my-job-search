@@ -78,6 +78,21 @@ RENDERCV_THEMES: tuple[str, ...] = (
 )
 
 
+def _design_block(theme: str) -> dict:
+    """Return a rendercv design dict with the theme and E.164 phone formatting.
+
+    RenderCV re-parses ``cv.phone`` and reformats it according to
+    ``design.header.connections.phone_number_format``, whose default is
+    ``national`` — for an Indian number that renders as "08883337771" (country
+    code dropped, trunk ``0`` prepended). Forcing ``E164`` keeps the country
+    code in every rendered PDF regardless of the theme.
+    """
+    return {
+        "theme": theme,
+        "header": {"connections": {"phone_number_format": "E164"}},
+    }
+
+
 def apply_theme(yaml_str: str, theme: str) -> str:
     """Return *yaml_str* with its ``design.theme`` replaced by *theme*.
 
@@ -229,7 +244,7 @@ def build_resume_yaml(cv: dict, theme: str) -> str:
     document = _make_renderable(
         {
             "cv": cv,
-            "design": {"theme": theme},
+            "design": _design_block(theme),
         }
     )
     return yaml.dump(document, allow_unicode=True, sort_keys=False)
@@ -264,10 +279,35 @@ def build_cover_letter_yaml(
     document = _make_renderable(
         {
             "cv": cv,
-            "design": {"theme": theme},
+            "design": _design_block(theme),
         }
     )
     return yaml.dump(document, allow_unicode=True, sort_keys=False)
+
+
+def _ensure_e164_phone_format(document: dict) -> dict:
+    """Force E.164 phone rendering on an already-built design block.
+
+    rendercv's default ``phone_number_format`` is ``national``, which renders
+    an Indian number as "08883337771" (country code dropped, ``0`` prepended).
+    New documents get the header block from _design_block; older stored rows
+    predate it, so inject the block at render time too. Mutates and returns
+    *document*.
+    """
+    design = document.get("design")
+    if not isinstance(design, dict):
+        design = {}
+        document["design"] = design
+    header = design.get("header")
+    if not isinstance(header, dict):
+        header = {}
+        design["header"] = header
+    connections = header.get("connections")
+    if not isinstance(connections, dict):
+        connections = {}
+        header["connections"] = connections
+    connections["phone_number_format"] = "E164"
+    return document
 
 
 def render_pdf(yaml_str: str) -> bytes:
@@ -282,6 +322,7 @@ def render_pdf(yaml_str: str) -> bytes:
         document = yaml.safe_load(yaml_str)
         if isinstance(document, dict) and "cv" in document:
             _strip_page_decorations(document)
+            _ensure_e164_phone_format(document)
             yaml_str = yaml.dump(_make_renderable(document), allow_unicode=True, sort_keys=False)
     except yaml.YAMLError as exc:
         logger.warning("rendercv: could not pre-parse YAML for repair: %s", exc)
